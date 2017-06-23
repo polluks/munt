@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2015 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -65,7 +65,7 @@ bool MidiParser::parseTrack(QMidiEventList &midiEventList) {
 	quint32 trackLen = qFromBigEndian<quint32>((uchar *)&header[4]);
 	char *trackData = new char[trackLen];
 	if (!readFile(trackData, trackLen)) {
-		delete trackData;
+		delete[] trackData;
 		return false;
 	}
 
@@ -91,18 +91,44 @@ bool MidiParser::parseTrack(QMidiEventList &midiEventList) {
 					sysexBuffer.clear();
 					sysexBuffer += status;
 					quint32 sysexLength = parseVarLenInt(++data);
+					if (sysexLength < 1) {
+						// No SysEx data, keep the time in sync
+						midiEventList.newMidiEvent().assignSyncMessage(time);
+						continue;
+					}
 					if (MT32Emu::SYSEX_BUFFER_SIZE <= sysexLength) {
 						qDebug() << "MidiParser: Warning: too long sysex encountered, it may cause problems with real hardware. Sysex length:" << sysexLength + 1;
 					}
 					sysexBuffer.append(data, sysexLength);
-					data += sysexLength;
-					midiEventList.newMidiEvent().assignSysex(time, sysexBuffer.constData(), sysexLength + 1);
+					data += sysexLength - 1;
+					if (*(data++) == 0xF7) {
+						// Complete SysEx event
+						midiEventList.newMidiEvent().assignSysex(time, sysexBuffer.constData(), sysexBuffer.size());
+						sysexBuffer.clear();
+					} else {
+						// SysEx fragment, just keep the time in sync
+						midiEventList.newMidiEvent().assignSyncMessage(time);
+					}
 					continue;
 				} else if (status == 0xF7) {
 					// It's either a SysEx Continuation event or an escaped System event
-					qDebug() << "MidiParser: Fragmented SysEx / escape, unsupported";
 					quint32 len = parseVarLenInt(++data);
-					data += len;
+					if (sysexBuffer.isEmpty() || len < 1) {
+						qDebug() << "MidiParser: escaped System event, unsupported";
+						data += len;
+					} else {
+						sysexBuffer.append(data, len);
+						data += len - 1;
+						if (*(data++) == 0xF7) {
+							// Last SysEx fragment
+							midiEventList.newMidiEvent().assignSysex(time, sysexBuffer.constData(), sysexBuffer.size());
+							sysexBuffer.clear();
+						} else {
+							// SysEx is still incomplete, just keep the time in sync
+							midiEventList.newMidiEvent().assignSyncMessage(time);
+						}
+						continue;
+					}
 				} else if (status == 0xFF) {
 					// It's a Meta-event
 					runningStatus = 0; // Meta-event clears running status
@@ -169,7 +195,7 @@ bool MidiParser::parseTrack(QMidiEventList &midiEventList) {
 	if (runningStatus != 0x2F) {
 		qDebug() << "MidiParser: End-of-track Meta-event isn't the last event, file is probably corrupted.";
 	}
-	delete trackData;
+	delete[] trackData;
 	qDebug() << "MidiParser: Parsed" << midiEventList.count() << "MIDI events";
 	return true;
 }
@@ -243,7 +269,7 @@ bool MidiParser::parseSysex() {
 	file.seek(0);
 	char *fileData = new char[fileSize];
 	if (!readFile(fileData, fileSize)) {
-		delete fileData;
+		delete[] fileData;
 		return false;
 	}
 	int sysexBeginIx = -1;
@@ -259,7 +285,7 @@ bool MidiParser::parseSysex() {
 		}
 	}
 	qDebug() << "MidiParser: Loaded sysex events:" << midiEventList.count();
-	delete fileData;
+	delete[] fileData;
 	return true;
 }
 

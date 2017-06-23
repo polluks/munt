@@ -1,7 +1,60 @@
-	2.0 Current
+2.2-current:
+
+	* Added emulation of a number of MT-32 GEN0 quirks that is enabled when loading e.g. Control ROM v1.07,
+	  so many patches specific for old MT-32 are now played correctly. Thanks go to NewRisingSun for providing
+	  the test set of those patches. See http://www.vogons.org/viewtopic.php?p=578873#p578873 for more details.
+	* Fixed sample format conversion implementation, so that integer samples are converted to normalised
+	  float samples as well as float samples are still converted to full-range integer ones.
+	  LA32FloatWaveGenerator now produces output at 0.25 volume that corresponds to the fact that each partial
+	  in LA32 uses only 14-bit samples. Still, no clamping is applied in DACInputMode_NICE mode for floats,
+	  so the output samples may overshoot a little for tunes with the volume set too high.
+
+2017-04-09:
+
+	2.1.0 released.
+
+	* Added sample rate conversion feature that allows converting the synthesiser output to any desired sample rate.
+	  It can either utilise an external library (e.g. libsoxr or libsamplerate) or use an internal implementation.
+	  This behaviour is controlled by a build option libmt32emu_WITH_INTERNAL_RESAMPLER (enabled by default).
+	  The internal implementation is derived from that previously added in mt32emu-qt application and aims
+	  to provide for good performance yet lower the added latency at the expense of phase linearity.
+	* The types of the rendering engine and of the wave generator can now be triggered in runtime. Nuked
+	  MT32EMU_USE_FLOAT_SAMPLES preprocessor definition.
+
+2017-03-05:
+
+	2.0.4 released.
+
+	* Fixed API Configuration compatibility check for mode MT32EMU_API_TYPE 3.
+
+2017-02-27:
+
+	2.0.3 released.
+
+	* Renderer now uses pre-allocated temporary sample buffers thus reducing the amount of memory used on the stack.
+
+2017-02-25:
+
+	2.0.2 released.
+
+	* Fixed a bug in handling of the rhythm part that enabled playing uninitialised timbres when using MT-32 control ROMs
+	  and setting timbre numbers >= 94 in the rhythm set up area.
+
+2016-12-11:
+
+	2.0.1 released.
+
+	* Disamibugated names of classes ReportHandler and MidiReceiver. In cpp_interface.h, these classes are now named
+	  IReportHandler and IMidiReceiver in accordance. This fixes linkage errors that may previously arise
+	  when an implementation attempted to extend one of these classes.
+	* Various other minor code improvements that render no functional changes.
+
+2016-10-22:
+
+	2.0.0 released.
 
 	* Introduced support for sound groups. Callback ReportHandler::onProgramChanged() now supply correct sound group name
-	  instead of just number of the timbre bank.
+	  instead of just the index of the timbre bank.
 	* Reworked ControlROMFeatureSet. MT-32 GEN0 quirk "Pitch Envelope Overflow" exploited in Colonel's Bequest timbre "Lightning"
 	  is now emulated when loading one of control ROMs v.1.04-1.07.
 	* Improved current loose implementation of SysEx handshake communication. Specifically, disabled the check for partial
@@ -14,9 +67,9 @@
 	  - introduced C-compatible API as a facade, that allows using the library with programs written in other languages
 	    as well as provides for consistent well-defined ABI for the library as a shared object;
 	  - C-compatible API also involves COM-like interfaces to simplify usage of the library as a plugin loaded in run-time;
-	  - three new build options libmt32emu_SHARED, libmt32emu_C_INTERFACE and libmt32emu_PLUGIN_INTERFACE intended
+	  - three new build options libmt32emu_SHARED, libmt32emu_C_INTERFACE and libmt32emu_CPP_INTERFACE intended
 	    to configure whether to build a statically or dynamically linked library, whether to include C-compatible API,
-	    and whether to expose C functions other than the class factory (that in turn allows to reduce the symbol table).
+	    and whether to expose C++ classes (old-fashioned compiler-specific ABI).
 
 2014-12-21:
 

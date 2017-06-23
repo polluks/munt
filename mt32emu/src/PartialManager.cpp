@@ -1,5 +1,5 @@
 /* Copyright (C) 2003, 2004, 2005, 2006, 2008, 2009 Dean Beeler, Jerome Fisher
- * Copyright (C) 2011-2015 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
+ * Copyright (C) 2011-2017 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -59,7 +59,11 @@ bool PartialManager::shouldReverb(int i) {
 	return partialTable[i]->shouldReverb();
 }
 
-bool PartialManager::produceOutput(int i, Sample *leftBuf, Sample *rightBuf, Bit32u bufferLength) {
+bool PartialManager::produceOutput(int i, IntSample *leftBuf, IntSample *rightBuf, Bit32u bufferLength) {
+	return partialTable[i]->produceOutput(leftBuf, rightBuf, bufferLength);
+}
+
+bool PartialManager::produceOutput(int i, FloatSample *leftBuf, FloatSample *rightBuf, Bit32u bufferLength) {
 	return partialTable[i]->produceOutput(leftBuf, rightBuf, bufferLength);
 }
 
@@ -280,7 +284,7 @@ void PartialManager::polyFreed(Poly *poly) {
 			const Poly *activePoly = synth->getPart(partNum)->getFirstActivePoly();
 			Bit32u polyCount = 0;
 			while (activePoly != NULL) {
-				activePoly->getNext();
+				activePoly = activePoly->getNext();
 				polyCount++;
 			}
 			synth->printDebug("Part: %i, active poly count: %i\n", partNum, polyCount);

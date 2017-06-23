@@ -1,5 +1,23 @@
-	1.4 Current
+1.6-current:
 
+	* Improved a bit the LCD emulation to better match behaviour of old MT-32 units.
+	* Improved synth profile handling. When a non-default synth profile is selected in the synth properties dialog,
+	  it is now used during synth re-opening (provided that it is pinned or an active MIDI session persists).
+	* Added support for SysEx fragments in standard MIDI files played using the internal MIDI player.
+
+2017-04-09:
+
+	1.5.0 released.
+
+	* Updated mt32emu library to version 2.1.0.
+	* Moved sample rate conversion feature from mt32emu-qt to the libmt32emu, so it can be easily used in other applications.
+	* Added an option to select the renderer type in the synth properties (preserved in the profile).
+
+2016-10-22:
+
+	1.4.0 released.
+
+	* Updated mt32emu library to version 2.0.0.
 	* Added support of ALSA raw MIDI ports in ALSA MIDI driver. Configuration option mt32emu-qt_WITH_ALSA_MIDI_DRIVER
 	  renamed to mt32emu-qt_WITH_ALSA_MIDI_SEQUENCER for consistency, and is now set to TRUE by default on Linux systems only.
 	* Added handling of fragmented SysExes in ALSA MIDI driver.
@@ -16,6 +34,7 @@
 	* Improved support for Cygwin, enabled native Windows MIDI and wave audio API.
 	* Improved LCD emulation: when setting standard patches, proper sound group name is shown.
 	* Introduced pause function in MIDI player for convenience.
+	* Introduced a possibility to synchronously record audio output from a synth to a file along while listening.
 	* About window now shows target arch and used version of Qt library.
 
 2014-12-21:

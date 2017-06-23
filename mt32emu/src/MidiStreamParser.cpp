@@ -1,5 +1,5 @@
 /* Copyright (C) 2003, 2004, 2005, 2006, 2008, 2009 Dean Beeler, Jerome Fisher
- * Copyright (C) 2011-2015 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
+ * Copyright (C) 2011-2017 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -25,18 +25,62 @@
 
 using namespace MT32Emu;
 
+DefaultMidiStreamParser::DefaultMidiStreamParser(Synth &useSynth, Bit32u initialStreamBufferCapacity) :
+	MidiStreamParser(initialStreamBufferCapacity), synth(useSynth), timestampSet(false) {}
+
+void DefaultMidiStreamParser::setTimestamp(const Bit32u useTimestamp) {
+	timestampSet = true;
+	timestamp = useTimestamp;
+}
+
+void DefaultMidiStreamParser::resetTimestamp() {
+	timestampSet = false;
+}
+
+void DefaultMidiStreamParser::handleShortMessage(const Bit32u message) {
+	do {
+		if (timestampSet) {
+			if (synth.playMsg(message, timestamp)) return;
+		}
+		else {
+			if (synth.playMsg(message)) return;
+		}
+	} while (synth.reportHandler->onMIDIQueueOverflow());
+}
+
+void DefaultMidiStreamParser::handleSysex(const Bit8u *stream, const Bit32u length) {
+	do {
+		if (timestampSet) {
+			if (synth.playSysex(stream, length, timestamp)) return;
+		}
+		else {
+			if (synth.playSysex(stream, length)) return;
+		}
+	} while (synth.reportHandler->onMIDIQueueOverflow());
+}
+
+void DefaultMidiStreamParser::handleSystemRealtimeMessage(const Bit8u realtime) {
+	synth.reportHandler->onMIDISystemRealtime(realtime);
+}
+
+void DefaultMidiStreamParser::printDebug(const char *debugMessage) {
+	synth.printDebug("%s", debugMessage);
+}
+
 MidiStreamParser::MidiStreamParser(Bit32u initialStreamBufferCapacity) :
 	MidiStreamParserImpl(*this, *this, initialStreamBufferCapacity) {}
 
 MidiStreamParserImpl::MidiStreamParserImpl(MidiReceiver &useReceiver, MidiReporter &useReporter, Bit32u initialStreamBufferCapacity) :
 	midiReceiver(useReceiver), midiReporter(useReporter)
 {
-	if (initialStreamBufferCapacity < (Bit32u)SYSEX_BUFFER_SIZE) initialStreamBufferCapacity = SYSEX_BUFFER_SIZE;
+	if (initialStreamBufferCapacity < SYSEX_BUFFER_SIZE) initialStreamBufferCapacity = SYSEX_BUFFER_SIZE;
 	if (MAX_STREAM_BUFFER_SIZE < initialStreamBufferCapacity) initialStreamBufferCapacity = MAX_STREAM_BUFFER_SIZE;
 	streamBufferCapacity = initialStreamBufferCapacity;
 	streamBuffer = new Bit8u[streamBufferCapacity];
 	streamBufferSize = 0;
 	runningStatus = 0;
+
+	reserved = NULL;
 }
 
 MidiStreamParserImpl::~MidiStreamParserImpl() {
@@ -75,12 +119,12 @@ void MidiStreamParserImpl::parseStream(const Bit8u *stream, Bit32u length) {
 
 void MidiStreamParserImpl::processShortMessage(const Bit32u message) {
 	// Adds running status to the MIDI message if it doesn't contain one
-	Bit8u status = (Bit8u)message;
+	Bit8u status = Bit8u(message & 0xFF);
 	if (0xF8 <= status) {
 		midiReceiver.handleSystemRealtimeMessage(status);
 	} else if (processStatusByte(status)) {
 		midiReceiver.handleShortMessage((message << 8) | status);
-	} else {
+	} else if (0x80 <= status) { // If no running status available yet, skip this message
 		midiReceiver.handleShortMessage(message);
 	}
 }
@@ -126,7 +170,7 @@ bool MidiStreamParserImpl::processStatusByte(Bit8u &status) {
 Bit32u MidiStreamParserImpl::parseShortMessageStatus(const Bit8u stream[]) {
 	Bit8u status = *stream;
 	Bit32u parsedLength = processStatusByte(status) ? 0 : 1;
-	if (0x80 <= status) { // No running status available yet, skip one byte
+	if (0x80 <= status) { // If no running status available yet, skip one byte
 		*streamBuffer = status;
 		++streamBufferSize;
 	}

@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2015 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -52,7 +52,7 @@ bool MidiRecorder::isRecording() {
 }
 
 bool MidiRecorder::saveSMF(QString fileName, MasterClockNanos midiTick) {
-	division = uint(DEFAULT_NANOS_PER_QUARTER_NOTE / midiTick);
+	uint division = uint(DEFAULT_NANOS_PER_QUARTER_NOTE / midiTick);
 
 	// Clamp division to fit to 16-bit signed integer
 	if (division > 32767) {
@@ -62,7 +62,7 @@ bool MidiRecorder::saveSMF(QString fileName, MasterClockNanos midiTick) {
 	file.setFileName(fileName);
 	forever {
 		if (!file.open(QIODevice::WriteOnly)) break;
-		if (!writeHeader()) break;
+		if (!writeHeader(division)) break;
 		if (!writeTrack(midiTick)) break;
 		file.close();
 		return true;
@@ -71,7 +71,7 @@ bool MidiRecorder::saveSMF(QString fileName, MasterClockNanos midiTick) {
 	return false;
 }
 
-bool MidiRecorder::writeHeader() {
+bool MidiRecorder::writeHeader(uint division) {
 	if (!writeFile(headerID, 8)) return false;
 	char header[6];
 	qToBigEndian<quint16>(0, (uchar *)&header[0]); // format 0

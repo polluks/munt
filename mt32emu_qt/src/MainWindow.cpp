@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2015 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -22,10 +22,6 @@
 #define _WIN32_WINNT 0x0500
 #endif
 #include <windows.h>
-#endif
-
-#ifndef GIT_HASH
-#define GIT_HASH "Unknown"
 #endif
 
 #ifndef BUILD_DATE
@@ -58,7 +54,7 @@ MainWindow::MainWindow(Master *master, QWidget *parent) :
 	connect(master, SIGNAL(synthRouteAdded(SynthRoute *, const AudioDevice *)), SLOT(handleSynthRouteAdded(SynthRoute *, const AudioDevice *)));
 	connect(master, SIGNAL(synthRouteRemoved(SynthRoute *)), SLOT(handleSynthRouteRemoved(SynthRoute *)));
 	connect(master, SIGNAL(synthRoutePinned()), SLOT(refreshTabNames()));
-	connect(master, SIGNAL(romsNotSet()), SLOT(on_actionROM_Configuration_triggered()));
+	connect(master, SIGNAL(romsLoadFailed(bool &)), SLOT(handleROMSLoadFailed(bool &)), Qt::DirectConnection);
 	connect(master, SIGNAL(playMidiFiles(const QStringList &)), SLOT(handlePlayMidiFiles(const QStringList &)), Qt::QueuedConnection);
 	connect(master, SIGNAL(convertMidiFiles(const QStringList &)), SLOT(handleConvertMidiFiles(const QStringList &)), Qt::QueuedConnection);
 	connect(master, SIGNAL(mainWindowTitleUpdated(const QString &)), SLOT(setWindowTitle(const QString &)));
@@ -116,16 +112,14 @@ void MainWindow::on_actionAbout_triggered()
 	QMessageBox::about(this, "About",
 		"Munt - Roland (R) MT-32 sound module emulator\n"
 		"\n"
-		"Munt Library Version " + QString(MT32Emu::Synth::getLibraryVersionString()) + "\n"
 		"Munt mt32emu_qt GUI Application Version " APP_VERSION "\n"
-		"Qt Library Version " QT_VERSION_STR "\n"
+		"Munt Library Version " + QString(MT32Emu::Synth::getLibraryVersionString()) + "\n"
+		"Qt Library Version " + qVersion() + "\n"
 		"\n"
-		"Build Info:\n"
-		"  Arch:\t" BUILD_SYSTEM " " + QString::number(QSysInfo::WordSize) + "-bit\n"
-		"  Hash:\t" GIT_HASH "\n"
-		"  Date:\t" BUILD_DATE "\n"
+		"Build Arch: " BUILD_SYSTEM " " + QString::number(QSysInfo::WordSize) + "-bit\n"
+		"Build Date: " BUILD_DATE "\n"
 		"\n"
-		"Copyright (C) 2011-2015 Jerome Fisher, Sergey V. Mikayev\n"
+		"Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev\n"
 		"\n"
 		"Licensed under GPL v3 or any later version."
 	);
@@ -169,6 +163,9 @@ void MainWindow::handleSynthRouteRemoved(SynthRoute *synthRoute) {
 	}
 }
 
+void MainWindow::handleROMSLoadFailed(bool &recoveryAttempted) {
+	recoveryAttempted = showROMSelectionDialog();
+}
 
 void MainWindow::on_menuMIDI_aboutToShow() {
 	ui->actionNew_MIDI_port->setEnabled(master->canCreateMidiPort());
@@ -228,17 +225,20 @@ void MainWindow::on_actionShow_connection_balloons_toggled(bool checked) {
 }
 
 void MainWindow::on_actionROM_Configuration_triggered() {
+	showROMSelectionDialog();
+}
+
+bool MainWindow::showROMSelectionDialog() {
 	Master &master = *Master::getInstance();
 	SynthProfile synthProfile;
-	synthProfile.controlROMImage = synthProfile.pcmROMImage = NULL;
-	master.disconnect(this, SLOT(on_actionROM_Configuration_triggered()));
 	master.loadSynthProfile(synthProfile, "");
-	connect(&master, SIGNAL(romsNotSet()), SLOT(on_actionROM_Configuration_triggered()));
 	ROMSelectionDialog rsd(synthProfile, this);
 	rsd.loadROMInfos();
 	if (rsd.exec() == QDialog::Accepted) {
 		master.storeSynthProfile(synthProfile, "");
+		return true;
 	}
+	return false;
 }
 
 void MainWindow::trayIconContextMenu() {

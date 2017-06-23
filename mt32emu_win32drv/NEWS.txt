@@ -1,4 +1,13 @@
-	1.2 Current
+2017-04-09:
+
+	1.3.0 released.
+
+	* Updated mt32emu library to version 2.1.0.
+	* Added support for the synth profile setting "rendererType".
+
+2016-10-22:
+
+	1.2.0 released.
 
 	* Fixed possible crashes when reloading settings to the internal synth upon MIDI port re-opening in some cases.
 	* Updated mt32emu library to version 2.0.0.

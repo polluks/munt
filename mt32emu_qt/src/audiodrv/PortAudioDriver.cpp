@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2015 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -211,12 +211,15 @@ const QList<const AudioDevice *> PortAudioDriver::createDeviceList() {
 			// Seems to be an input device
 			continue;
 		}
+		QString hostApiName;
 		const PaHostApiInfo *hostApiInfo = Pa_GetHostApiInfo(deviceInfo->hostApi);
 		if (hostApiInfo == NULL) {
 			qDebug() << "Pa_GetHostApiInfo() returned NULL for" << deviceInfo->hostApi;
-			QString().setNum(deviceInfo->hostApi);
+			hostApiName = "#" + QString().setNum(deviceInfo->hostApi);
+		} else {
+			hostApiName = QString(hostApiInfo->name);
 		}
-		QString deviceName = "(" + QString(hostApiInfo->name) + ") " + QString().fromLocal8Bit(deviceInfo->name);
+		QString deviceName = "(" + hostApiName + ") " + QString().fromLocal8Bit(deviceInfo->name);
 		deviceList.append(new PortAudioDevice(*this, deviceIndex, deviceName));
 	}
 	return deviceList;

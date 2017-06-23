@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2015 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -25,9 +25,7 @@
 
 using namespace MT32Emu;
 
-static const int CHECKBOX_COLUMN = 0;
 static const int FILENAME_COLUMN = 1;
-static const int ROM_TYPE_COLUMN = 4;
 
 ROMSelectionDialog::ROMSelectionDialog(SynthProfile &useSynthProfile, QWidget *parent) :
 		QDialog(parent),
@@ -98,7 +96,7 @@ void ROMSelectionDialog::refreshROMInfos() {
 	for (QStringListIterator it(dirEntries); it.hasNext();) {
 		QString fileName = it.next();
 		FileStream file;
-		if (!file.open((synthProfile.romDir.absolutePath() + QDir::separator() + fileName).toUtf8())) continue;
+		if (!file.open(Master::getROMPathName(synthProfile.romDir, fileName).toUtf8())) continue;
 		const ROMInfo *romInfoPtr = ROMInfo::getROMInfo(&file);
 		if (romInfoPtr == NULL) continue;
 		const ROMInfo &romInfo = *romInfoPtr;

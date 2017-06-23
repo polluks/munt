@@ -1,5 +1,5 @@
 /* Copyright (C) 2003, 2004, 2005, 2006, 2008, 2009 Dean Beeler, Jerome Fisher
- * Copyright (C) 2011-2015 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
+ * Copyright (C) 2011-2017 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -169,7 +169,8 @@ struct MemParams {
 }; // struct MemParams
 
 struct SoundGroup {
-	Bit16u timbreNumberTableAddr;
+	Bit8u timbreNumberTableAddrLow;
+	Bit8u timbreNumberTableAddrHigh;
 	Bit8u displayPosition;
 	Bit8u name[9];
 	Bit8u timbreCount;
@@ -183,7 +184,13 @@ struct SoundGroup {
 #endif
 
 struct ControlROMFeatureSet {
+	unsigned int quirkBasePitchOverflow : 1;
 	unsigned int quirkPitchEnvelopeOverflow : 1;
+	unsigned int quirkRingModulationNoMix : 1;
+	unsigned int quirkTVAZeroEnvLevels : 1;
+	unsigned int quirkPanMult : 1;
+	unsigned int quirkKeyShift : 1;
+	unsigned int quirkTVFBaseCutoffLimit : 1;
 
 	// Features below don't actually depend on control ROM version, which is used to identify hardware model
 	unsigned int defaultReverbMT32Compatible : 1;
@@ -235,7 +242,7 @@ struct PatchCache {
 	bool playPartial;
 	bool PCMPartial;
 	int pcm;
-	char waveform;
+	Bit8u waveform;
 
 	Bit32u structureMix;
 	int structurePosition;

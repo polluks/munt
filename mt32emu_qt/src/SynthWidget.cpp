@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2015 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -101,25 +101,33 @@ void SynthWidget::handleSynthRouteState(SynthRouteState SynthRouteState) {
 	case SynthRouteState_OPEN:
 		ui->startButton->setEnabled(false);
 		ui->stopButton->setEnabled(true);
-		ui->audioOutputGroupBox->setEnabled(false);
+		ui->audioDeviceComboBox->setEnabled(false);
+		ui->refreshButton->setEnabled(false);
+		ui->audioPropertiesButton->setEnabled(false);
 		ui->statusLabel->setText("Open");
 		break;
 	case SynthRouteState_OPENING:
 		ui->startButton->setEnabled(false);
 		ui->stopButton->setEnabled(false);
-		ui->audioOutputGroupBox->setEnabled(false);
+		ui->audioDeviceComboBox->setEnabled(false);
+		ui->refreshButton->setEnabled(false);
+		ui->audioPropertiesButton->setEnabled(false);
 		ui->statusLabel->setText("Opening");
 		break;
 	case SynthRouteState_CLOSING:
 		ui->startButton->setEnabled(false);
 		ui->stopButton->setEnabled(false);
-		ui->audioOutputGroupBox->setEnabled(false);
+		ui->audioDeviceComboBox->setEnabled(false);
+		ui->refreshButton->setEnabled(false);
+		ui->audioPropertiesButton->setEnabled(false);
 		ui->statusLabel->setText("Closing");
 		break;
 	case SynthRouteState_CLOSED:
 		ui->startButton->setEnabled(true);
 		ui->stopButton->setEnabled(false);
-		ui->audioOutputGroupBox->setEnabled(true);
+		ui->audioDeviceComboBox->setEnabled(true);
+		ui->refreshButton->setEnabled(true);
+		ui->audioPropertiesButton->setEnabled(true);
 		ui->statusLabel->setText("Closed");
 		break;
 	}
@@ -237,6 +245,21 @@ void SynthWidget::on_midiRecord_clicked() {
 	}
 }
 
+void SynthWidget::on_audioRecord_clicked() {
+	if (synthRoute->isRecordingAudio()) {
+		ui->audioRecord->setText("Record");
+		synthRoute->stopRecordingAudio();
+	} else {
+		static QString currentDir = NULL;
+		QString fileName = QFileDialog::getSaveFileName(this, NULL, currentDir, "*.wav *.raw;;*.wav;;*.raw;;*.*");
+		if (!fileName.isEmpty()) {
+			currentDir = QDir(fileName).absolutePath();
+			ui->audioRecord->setText("Stop");
+			synthRoute->startRecordingAudio(fileName);
+		}
+	}
+}
+
 void SynthWidget::on_masterVolumeSlider_valueChanged(int newValue) {
 	synthRoute->setMasterVolume(newValue);
 }
@@ -284,11 +307,11 @@ void SynthWidget::on_detailsButton_clicked() {
 
 void SynthWidget::setEmuModeText() {
 	QString emuMode;
-	SynthProfile synthProfile;
-	synthRoute->getSynthProfile(synthProfile);
-	if (synthProfile.controlROMImage == NULL) emuMode = "Unknown";
-	else emuMode = synthProfile.controlROMImage->getROMInfo()->description;
-	ui->synthEmuModeLabel->setText(emuMode + " Emulation Mode");
+	const MT32Emu::ROMImage *controlROMImage = NULL;
+	const MT32Emu::ROMImage *pcmROMImage = NULL;
+	synthRoute->getROMImages(controlROMImage, pcmROMImage);
+	emuMode = controlROMImage == NULL ? "Unknown" : controlROMImage->getROMInfo()->description;
+	ui->synthEmuModeLabel->setText("Emulation Mode: " + emuMode);
 }
 
 const QIcon &SynthWidget::getSynthDetailsIcon(bool visible) {

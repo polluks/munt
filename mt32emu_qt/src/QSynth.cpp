@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2015 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -26,10 +26,19 @@
 #include <QMessageBox>
 
 #include "QSynth.h"
+#include "AudioFileWriter.h"
 #include "Master.h"
 #include "MasterClock.h"
 
 using namespace MT32Emu;
+
+static const ROMImage *makeROMImage(const QDir &romDir, QString romFileName) {
+	FileStream *file = new FileStream;
+	if (file->open(Master::getROMPathName(romDir, romFileName).toUtf8())) {
+		return ROMImage::makeROMImage(file);
+	}
+	return NULL;
+}
 
 QReportHandler::QReportHandler(QObject *parent) : QObject(parent) {
 	connect(this, SIGNAL(balloonMessageAppeared(const QString &, const QString &)), Master::getInstance(), SLOT(showBalloon(const QString &, const QString &)));
@@ -86,25 +95,17 @@ void QReportHandler::onNewReverbLevel(Bit8u level) {
 	emit reverbLevelChanged(level);
 }
 
-void QReportHandler::onPolyStateChanged(int partNum) {
+void QReportHandler::onPolyStateChanged(Bit8u partNum) {
 	emit polyStateChanged(partNum);
 }
 
-void QReportHandler::onProgramChanged(int partNum, const char soundGroupName[], const char patchName[]) {
+void QReportHandler::onProgramChanged(Bit8u partNum, const char soundGroupName[], const char patchName[]) {
 	emit programChanged(partNum, QString().fromLocal8Bit(soundGroupName), QString().fromLocal8Bit(patchName));
-}
-
-void QSynth::convertSamplesFromNativeEndian(Bit16s *buffer, uint sampleCount, QSysInfo::Endian targetByteOrder) {
-	if (QSysInfo::ByteOrder == targetByteOrder) return;
-	while ((sampleCount--) > 0) {
-		Bit16s tmp = qbswap<Bit16s>(*buffer);
-		*(buffer++) = tmp;
-	}
 }
 
 QSynth::QSynth(QObject *parent) :
 	QObject(parent), state(SynthState_CLOSED), midiMutex(QMutex::Recursive),
-	controlROMImage(NULL), pcmROMImage(NULL), reportHandler(this), sampleRateConverter(NULL)
+	controlROMImage(NULL), pcmROMImage(NULL), reportHandler(this), sampleRateConverter(NULL), audioRecorder(NULL)
 {
 	synthMutex = new QMutex(QMutex::Recursive);
 	synth = new Synth(&reportHandler);
@@ -112,7 +113,8 @@ QSynth::QSynth(QObject *parent) :
 
 QSynth::~QSynth() {
 	freeROMImages();
-	if (sampleRateConverter != NULL) delete sampleRateConverter;
+	delete audioRecorder;
+	delete sampleRateConverter;
 	delete synth;
 	delete synthMutex;
 }
@@ -173,7 +175,7 @@ bool QSynth::playMIDISysex(const Bit8u *sysex, Bit32u sysexLen, quint64 timestam
 }
 
 Bit32u QSynth::convertOutputToSynthTimestamp(quint64 timestamp) {
-	return Bit32u(timestamp * sampleRateRatio);
+	return Bit32u(sampleRateConverter->convertOutputToSynthTimestamp(timestamp));
 }
 
 void QSynth::render(Bit16s *buffer, uint length) {
@@ -186,48 +188,51 @@ void QSynth::render(Bit16s *buffer, uint length) {
 		emit audioBlockRendered();
 		return;
 	}
-	if (sampleRateConverter != NULL) {
-		sampleRateConverter->getOutputSamples(buffer, length);
-	} else {
-		synth->render(buffer, length);
+	sampleRateConverter->getOutputSamples(buffer, length);
+	if (isRecordingAudio()) {
+		if (!audioRecorder->write(buffer, length)) stopRecordingAudio();
 	}
 	synthMutex->unlock();
 	emit audioBlockRendered();
 }
 
-bool QSynth::open(uint targetSampleRate, SampleRateConverter::SRCQuality srcQuality, const QString useSynthProfileName) {
-	if (isOpen()) {
-		return true;
-	}
+bool QSynth::open(uint targetSampleRate, SamplerateConversionQuality srcQuality, const QString useSynthProfileName) {
+	if (isOpen()) return true;
 
-	synthProfileName = useSynthProfileName;
+	if (!useSynthProfileName.isEmpty()) synthProfileName = useSynthProfileName;
 	SynthProfile synthProfile;
-	getSynthProfile(synthProfile);
-	Master::getInstance()->loadSynthProfile(synthProfile, synthProfileName);
-	setSynthProfile(synthProfile, synthProfileName);
-	if (controlROMImage == NULL || pcmROMImage == NULL) {
+
+	forever {
+		Master::getInstance()->loadSynthProfile(synthProfile, synthProfileName);
+		if (controlROMImage == NULL || pcmROMImage == NULL) Master::getInstance()->findROMImages(synthProfile, controlROMImage, pcmROMImage);
+		if (controlROMImage == NULL) controlROMImage = makeROMImage(synthProfile.romDir, synthProfile.controlROMFileName);
+		if (controlROMImage != NULL && pcmROMImage == NULL) pcmROMImage = makeROMImage(synthProfile.romDir, synthProfile.pcmROMFileName);
+		if (controlROMImage != NULL && pcmROMImage != NULL) break;
 		qDebug() << "Missing ROM files. Can't open synth :(";
 		freeROMImages();
-		return false;
+		if (!Master::getInstance()->handleROMSLoadFailed(synthProfileName)) return false;
 	}
-	actualAnalogOutputMode = SampleRateConverter::chooseActualAnalogOutputMode(synthProfile.analogOutputMode, targetSampleRate, srcQuality);
+
+	MT32Emu::AnalogOutputMode actualAnalogOutputMode = synthProfile.analogOutputMode;
+	const AnalogOutputMode bestAnalogOutputMode = SampleRateConverter::getBestAnalogOutputMode(targetSampleRate);
+	if (actualAnalogOutputMode == AnalogOutputMode_ACCURATE && bestAnalogOutputMode == AnalogOutputMode_OVERSAMPLED) {
+		actualAnalogOutputMode = bestAnalogOutputMode;
+	}
+	setRendererType(synthProfile.rendererType);
+
 	static const char *ANALOG_OUTPUT_MODES[] = {"Digital only", "Coarse", "Accurate", "Oversampled2x"};
 	qDebug() << "Using Analogue output mode:" << ANALOG_OUTPUT_MODES[actualAnalogOutputMode];
+	qDebug() << "Using Renderer Type:" << (synthProfile.rendererType ? "Float 32-bit" : "Integer 16-bit");
+
 	if (synth->open(*controlROMImage, *pcmROMImage, actualAnalogOutputMode)) {
 		setState(SynthState_OPEN);
 		reportHandler.onDeviceReconfig();
 		setSynthProfile(synthProfile, synthProfileName);
 		if (engageChannel1OnOpen) resetMIDIChannelsAssignment(true);
-		if (targetSampleRate > 0 && targetSampleRate != getSynthSampleRate()) {
-			sampleRateConverter = SampleRateConverter::createSampleRateConverter(synth, targetSampleRate, srcQuality);
-			sampleRateRatio = SAMPLE_RATE / (double)targetSampleRate;
-		} else {
-			sampleRateRatio = SAMPLE_RATE / (double)getSynthSampleRate();
-		}
+		if (targetSampleRate == 0) targetSampleRate = getSynthSampleRate();
+		sampleRateConverter = new SampleRateConverter(*synth, targetSampleRate, srcQuality);
 		return true;
 	}
-	// We're now in a partially-open state - better to properly close.
-	synth->close(true);
 	delete synth;
 	synth = new Synth(&reportHandler);
 	return false;
@@ -369,6 +374,10 @@ void QSynth::setAnalogOutputMode(MT32Emu::AnalogOutputMode useAnalogOutputMode) 
 	analogOutputMode = useAnalogOutputMode;
 }
 
+void QSynth::setRendererType(MT32Emu::RendererType useRendererType) {
+	synth->selectRendererType(useRendererType);
+}
+
 const QString QSynth::getPatchName(int partNum) const {
 	synthMutex->lock();
 	QString name = isOpen() ? QString().fromLocal8Bit(synth->getPatchName(partNum)) : QString("Channel %1").arg(partNum + 1);
@@ -423,29 +432,17 @@ bool QSynth::isActive() const {
 }
 
 bool QSynth::reset() {
-	if (!isOpen()) return true;
-
-	setState(SynthState_CLOSING);
+	static Bit8u sysex[] = { 0x7f, 0, 0 };
 
 	midiMutex.lock();
 	synthMutex->lock();
-	synth->close();
-	// Do not delete synth here to keep the rendered frame counter value, audioStream is also alive during reset
-	if (!synth->open(*controlROMImage, *pcmROMImage, actualAnalogOutputMode)) {
-		// We're now in a partially-open state - better to properly close.
-		synth->close(true);
-		delete synth;
-		synth = new Synth(&reportHandler);
-		synthMutex->unlock();
-		midiMutex.unlock();
-		setState(SynthState_CLOSED);
-		return false;
+	if (isOpen()) {
+		setState(SynthState_CLOSING);
+		synth->writeSysex(16, sysex, 3);
+		setState(SynthState_OPEN);
 	}
 	synthMutex->unlock();
 	midiMutex.unlock();
-	reportHandler.onDeviceReconfig();
-
-	setState(SynthState_OPEN);
 	return true;
 }
 
@@ -464,10 +461,8 @@ void QSynth::close() {
 	// This effectively resets rendered frame counter, audioStream is also going down
 	delete synth;
 	synth = new Synth(&reportHandler);
-	if (sampleRateConverter != NULL) {
-		delete sampleRateConverter;
-		sampleRateConverter = NULL;
-	}
+	delete sampleRateConverter;
+	sampleRateConverter = NULL;
 	synthMutex->unlock();
 	midiMutex.unlock();
 	setState(SynthState_CLOSED);
@@ -479,11 +474,10 @@ void QSynth::getSynthProfile(SynthProfile &synthProfile) const {
 	synthProfile.romDir = romDir;
 	synthProfile.controlROMFileName = controlROMFileName;
 	synthProfile.pcmROMFileName = pcmROMFileName;
-	synthProfile.controlROMImage = controlROMImage;
-	synthProfile.pcmROMImage = pcmROMImage;
 	synthProfile.emuDACInputMode = synth->getDACInputMode();
 	synthProfile.midiDelayMode = synth->getMIDIDelayMode();
 	synthProfile.analogOutputMode = analogOutputMode;
+	synthProfile.rendererType = synth->getSelectedRendererType();
 	synthProfile.reverbCompatibilityMode = reverbCompatibilityMode;
 	synthProfile.outputGain = synth->getOutputGain();
 	synthProfile.reverbOutputGain = synth->getReverbOutputGain();
@@ -499,27 +493,18 @@ void QSynth::getSynthProfile(SynthProfile &synthProfile) const {
 
 void QSynth::setSynthProfile(const SynthProfile &synthProfile, QString useSynthProfileName) {
 	synthProfileName = useSynthProfileName;
+
+	// Settings below do not take effect before re-open.
 	romDir = synthProfile.romDir;
 	controlROMFileName = synthProfile.controlROMFileName;
 	pcmROMFileName = synthProfile.pcmROMFileName;
-	if (controlROMImage == NULL || pcmROMImage == NULL) {
-		freeROMImages();
-		controlROMImage = synthProfile.controlROMImage;
-		pcmROMImage = synthProfile.pcmROMImage;
-	} else if (synthProfile.controlROMImage != NULL && synthProfile.pcmROMImage != NULL) {
-		bool controlROMChanged = strcmp((char *)controlROMImage->getROMInfo()->sha1Digest, (char *)synthProfile.controlROMImage->getROMInfo()->sha1Digest) != 0;
-		bool pcmROMChanged = strcmp((char *)pcmROMImage->getROMInfo()->sha1Digest, (char *)synthProfile.pcmROMImage->getROMInfo()->sha1Digest) != 0;
-		if (controlROMChanged || pcmROMChanged) {
-			freeROMImages();
-			controlROMImage = synthProfile.controlROMImage;
-			pcmROMImage = synthProfile.pcmROMImage;
-			reset();
-		}
-	}
+	setAnalogOutputMode(synthProfile.analogOutputMode);
+	setRendererType(synthProfile.rendererType);
+
+	// Settings below take effect immediately.
 	setReverbCompatibilityMode(synthProfile.reverbCompatibilityMode);
 	setMIDIDelayMode(synthProfile.midiDelayMode);
 	setDACInputMode(synthProfile.emuDACInputMode);
-	setAnalogOutputMode(synthProfile.analogOutputMode);
 	setOutputGain(synthProfile.outputGain);
 	setReverbOutputGain(synthProfile.reverbOutputGain);
 	setReverbOverridden(synthProfile.reverbOverridden);
@@ -529,6 +514,11 @@ void QSynth::setSynthProfile(const SynthProfile &synthProfile, QString useSynthP
 	}
 	setReversedStereoEnabled(synthProfile.reversedStereoEnabled);
 	setInitialMIDIChannelsAssignment(synthProfile.engageChannel1OnOpen);
+}
+
+void QSynth::getROMImages(const MT32Emu::ROMImage *&cri, const MT32Emu::ROMImage *&pri) const {
+	cri = controlROMImage;
+	pri = pcmROMImage;
 }
 
 void QSynth::freeROMImages() {
@@ -542,4 +532,28 @@ void QSynth::freeROMImages() {
 
 const QReportHandler *QSynth::getReportHandler() const {
 	return &reportHandler;
+}
+
+void QSynth::startRecordingAudio(const QString &fileName) {
+	synthMutex->lock();
+	stopRecordingAudio();
+	audioRecorder = new AudioFileWriter(sampleRateConverter->convertSynthToOutputTimestamp(SAMPLE_RATE), fileName);
+	audioRecorder->open();
+	synthMutex->unlock();
+}
+
+void QSynth::stopRecordingAudio() {
+	synthMutex->lock();
+	if (!isRecordingAudio()) {
+		synthMutex->unlock();
+		return;
+	}
+	audioRecorder->close();
+	delete audioRecorder;
+	audioRecorder = NULL;
+	synthMutex->unlock();
+}
+
+bool QSynth::isRecordingAudio() const {
+	return audioRecorder != NULL;
 }

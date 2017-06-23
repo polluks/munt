@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2015 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -144,7 +144,7 @@ void AudioDriver::loadAudioSettings() {
 	QSettings *qSettings = Master::getInstance()->getSettings();
 	QString prefix = "Audio/" + id;
 	settings.sampleRate = qSettings->value(prefix + "/SampleRate", 0).toUInt();
-	settings.srcQuality = (SampleRateConverter::SRCQuality)qSettings->value(prefix + "/SRCQuality", SampleRateConverter::SRC_GOOD).toUInt();
+	settings.srcQuality = MT32Emu::SamplerateConversionQuality(qSettings->value(prefix + "/SRCQuality", MT32Emu::SamplerateConversionQuality_GOOD).toUInt());
 	settings.chunkLen = qSettings->value(prefix + "/ChunkLen").toInt();
 	settings.audioLatency = qSettings->value(prefix + "/AudioLatency").toInt();
 	settings.midiLatency = qSettings->value(prefix + "/MidiLatency").toInt();

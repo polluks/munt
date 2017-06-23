@@ -4,7 +4,7 @@
 #include <QtCore>
 #include <mt32emu/mt32emu.h>
 
-#include "resample/SampleRateConverter.h"
+class AudioFileWriter;
 
 enum SynthState {
 	SynthState_CLOSED,
@@ -22,11 +22,10 @@ struct SynthProfile {
 	QDir romDir;
 	QString controlROMFileName;
 	QString pcmROMFileName;
-	const MT32Emu::ROMImage *controlROMImage;
-	const MT32Emu::ROMImage *pcmROMImage;
 	MT32Emu::DACInputMode emuDACInputMode;
 	MT32Emu::MIDIDelayMode midiDelayMode;
 	MT32Emu::AnalogOutputMode analogOutputMode;
+	MT32Emu::RendererType rendererType;
 	ReverbCompatibilityMode reverbCompatibilityMode;
 	float outputGain;
 	float reverbOutputGain;
@@ -38,8 +37,6 @@ struct SynthProfile {
 	bool reversedStereoEnabled;
 	bool engageChannel1OnOpen;
 };
-
-class SampleRateConverter;
 
 class QReportHandler : public QObject, public MT32Emu::ReportHandler {
 	Q_OBJECT
@@ -56,8 +53,8 @@ public:
 	void onNewReverbMode(MT32Emu::Bit8u mode);
 	void onNewReverbTime(MT32Emu::Bit8u time);
 	void onNewReverbLevel(MT32Emu::Bit8u level);
-	void onPolyStateChanged(int partNum);
-	void onProgramChanged(int partNum, const char soundGroupName[], const char patchName[]);
+	void onPolyStateChanged(MT32Emu::Bit8u partNum);
+	void onProgramChanged(MT32Emu::Bit8u partNum, const char soundGroupName[], const char patchName[]);
 
 signals:
 	void balloonMessageAppeared(const QString &title, const QString &text);
@@ -91,7 +88,6 @@ private:
 	int reverbTime;
 	int reverbLevel;
 	MT32Emu::AnalogOutputMode analogOutputMode;
-	MT32Emu::AnalogOutputMode actualAnalogOutputMode;
 	ReverbCompatibilityMode reverbCompatibilityMode;
 	bool engageChannel1OnOpen;
 
@@ -99,20 +95,18 @@ private:
 	QReportHandler reportHandler;
 	QString synthProfileName;
 
-	double sampleRateRatio;
-	SampleRateConverter *sampleRateConverter;
+	MT32Emu::SampleRateConverter *sampleRateConverter;
+	AudioFileWriter *audioRecorder;
 
 	void setState(SynthState newState);
 	void freeROMImages();
 	MT32Emu::Bit32u convertOutputToSynthTimestamp(quint64 timestamp);
 
 public:
-	static void convertSamplesFromNativeEndian(MT32Emu::Bit16s *buffer, uint sampleCount, QSysInfo::Endian targetByteOrder);
-
 	QSynth(QObject *parent = NULL);
 	~QSynth();
 	bool isOpen() const;
-	bool open(uint targetSampleRate, SampleRateConverter::SRCQuality srcQuality = SampleRateConverter::SRC_GOOD, const QString useSynthProfileName = "");
+	bool open(uint targetSampleRate = 0, MT32Emu::SamplerateConversionQuality srcQuality = MT32Emu::SamplerateConversionQuality_GOOD, const QString useSynthProfileName = "");
 	void close();
 	bool reset();
 
@@ -128,6 +122,8 @@ public:
 	void getSynthProfile(SynthProfile &synthProfile) const;
 	void setSynthProfile(const SynthProfile &synthProfile, QString useSynthProfileName);
 
+	void getROMImages(const MT32Emu::ROMImage *&controlROMImage, const MT32Emu::ROMImage *&pcmROMImage) const;
+
 	void setMasterVolume(int masterVolume);
 	void setOutputGain(float outputGain);
 	void setReverbOutputGain(float reverbOutputGain);
@@ -141,6 +137,7 @@ public:
 	void setMIDIDelayMode(MT32Emu::MIDIDelayMode midiDelayMode);
 	void setDACInputMode(MT32Emu::DACInputMode emuDACInputMode);
 	void setAnalogOutputMode(MT32Emu::AnalogOutputMode analogOutputMode);
+	void setRendererType(MT32Emu::RendererType useRendererType);
 	const QString getPatchName(int partNum) const;
 	void getPartStates(bool *partStates) const;
 	void getPartialStates(MT32Emu::PartialState *partialStates) const;
@@ -148,6 +145,10 @@ public:
 	unsigned int getPartialCount() const;
 	unsigned int getSynthSampleRate() const;
 	bool isActive() const;
+
+	void startRecordingAudio(const QString &fileName);
+	void stopRecordingAudio();
+	bool isRecordingAudio() const;
 
 signals:
 	void stateChanged(SynthState state);

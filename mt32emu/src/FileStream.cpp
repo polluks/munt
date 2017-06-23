@@ -1,5 +1,5 @@
 /* Copyright (C) 2003, 2004, 2005, 2006, 2008, 2009 Dean Beeler, Jerome Fisher
- * Copyright (C) 2011-2015 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
+ * Copyright (C) 2011-2017 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -23,11 +23,12 @@ namespace MT32Emu {
 
 using std::ios_base;
 
-FileStream::FileStream() : data(NULL), size(0)
+FileStream::FileStream() : ifsp(*new std::ifstream), data(NULL), size(0)
 {}
 
 FileStream::~FileStream() {
 	// destructor closes ifsp
+	delete &ifsp;
 	delete[] data;
 }
 
@@ -39,7 +40,7 @@ size_t FileStream::getSize() {
 		return 0;
 	}
 	ifsp.seekg(0, ios_base::end);
-	size = (size_t)ifsp.tellg();
+	size = size_t(ifsp.tellg());
 	return size;
 }
 
@@ -58,8 +59,8 @@ const Bit8u *FileStream::getData() {
 		return NULL;
 	}
 	ifsp.seekg(0);
-	ifsp.read((char *)fileData, (std::streamsize)size);
-	if ((size_t)ifsp.tellg() != size) {
+	ifsp.read(reinterpret_cast<char *>(fileData), std::streamsize(size));
+	if (size_t(ifsp.tellg()) != size) {
 		delete[] fileData;
 		return NULL;
 	}

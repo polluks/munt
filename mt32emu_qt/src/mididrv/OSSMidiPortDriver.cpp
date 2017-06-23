@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2015 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@
 static const QString devDirName = "/dev/";
 static const QString defaultMidiPortName = "midi";
 static const QString sequencerName = "sequencer";
+static const QStringList midiPortTemplates = QStringList() << defaultMidiPortName << "midi?" << "midi??" << "midi?.?" << "umidi?.?" << sequencerName;
 
 static OSSMidiPortDriver *driver;
 
@@ -112,7 +113,7 @@ OSSMidiPortDriver::OSSMidiPortDriver(Master *useMaster) : MidiDriver(useMaster) 
 }
 
 void OSSMidiPortDriver::start() {
-	QList<QString> midiInPortNames;
+	QStringList midiInPortNames;
 	OSSMidiPortDriver::enumPorts(midiInPortNames);
 
 	if (midiInPortNames.indexOf(sequencerName) >= 0) startSession(NULL, sequencerName, true);
@@ -208,7 +209,7 @@ bool OSSMidiPortDriver::setPortProperties(MidiPropertiesDialog *mpd, MidiSession
 			}
 		}
 	}
-	QList<QString> midiInPortNames;
+	QStringList midiInPortNames;
 	OSSMidiPortDriver::enumPorts(midiInPortNames);
 	midiInPortNames.removeOne(sequencerName);
 	mpd->setMidiList(midiInPortNames, -1);
@@ -227,6 +228,6 @@ QString OSSMidiPortDriver::getNewPortName(MidiPropertiesDialog *mpd) {
 	return "";
 }
 
-void OSSMidiPortDriver::enumPorts(QList<QString> &midiPortNames) {
-	midiPortNames.append(QDir(devDirName).entryList(QStringList() << defaultMidiPortName << defaultMidiPortName + "*" << sequencerName, QDir::System));
+void OSSMidiPortDriver::enumPorts(QStringList &midiPortNames) {
+	midiPortNames.append(QDir(devDirName).entryList(midiPortTemplates, QDir::System));
 }

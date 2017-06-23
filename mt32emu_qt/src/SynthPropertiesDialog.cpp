@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2015 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -76,6 +76,10 @@ void SynthPropertiesDialog::on_analogComboBox_currentIndexChanged(int index) {
 	synthRoute->setAnalogOutputMode(MT32Emu::AnalogOutputMode(2 - index));
 }
 
+void SynthPropertiesDialog::on_rendererTypeComboBox_currentIndexChanged(int index) {
+	synthRoute->setRendererType(MT32Emu::RendererType(index));
+}
+
 void SynthPropertiesDialog::on_reverbCompatibilityComboBox_currentIndexChanged(int index) {
 	synthRoute->setReverbCompatibilityMode((ReverbCompatibilityMode)index);
 }
@@ -102,7 +106,6 @@ void SynthPropertiesDialog::on_buttonBox_clicked(QAbstractButton *button) {
 void SynthPropertiesDialog::on_profileComboBox_currentIndexChanged(int) {
 	Master &master = *Master::getInstance();
 	QString name = ui->profileComboBox->currentText();
-	synthRoute->getSynthProfile(synthProfile);
 	master.loadSynthProfile(synthProfile, name);
 	synthRoute->setSynthProfile(synthProfile, name);
 	ui->profileCheckBox->setChecked(name == master.getDefaultSynthProfileName());
@@ -201,6 +204,7 @@ void SynthPropertiesDialog::restoreDefaults() {
 	ui->midiDelayEmuComboBox->setCurrentIndex(1);
 	ui->dacEmuComboBox->setCurrentIndex(0);
 	ui->analogComboBox->setCurrentIndex(0);
+	ui->rendererTypeComboBox->setCurrentIndex(0);
 	ui->reverbCheckBox->setCheckState(Qt::Checked);
 	ui->reverbCompatibilityComboBox->setCurrentIndex(0);
 	ui->reverbModeComboBox->setCurrentIndex(0);
@@ -220,6 +224,7 @@ void SynthPropertiesDialog::loadSynthProfile(bool reloadFromSynthRoute) {
 	ui->midiDelayEmuComboBox->setCurrentIndex(synthProfile.midiDelayMode);
 	ui->dacEmuComboBox->setCurrentIndex(synthProfile.emuDACInputMode == MT32Emu::DACInputMode_NICE ? MT32Emu::DACInputMode_NICE : synthProfile.emuDACInputMode - 1);
 	ui->analogComboBox->setCurrentIndex(2 - synthProfile.analogOutputMode);
+	ui->rendererTypeComboBox->setCurrentIndex(synthProfile.rendererType);
 	ui->reverbCompatibilityComboBox->setCurrentIndex(synthProfile.reverbCompatibilityMode);
 	ui->reverbCheckBox->setCheckState(Qt::Checked);
 	ui->reverbModeComboBox->setCurrentIndex(synthProfile.reverbMode);
@@ -245,8 +250,6 @@ void SynthPropertiesDialog::saveSynthProfile() {
 	Master &master = *Master::getInstance();
 	QString name = ui->profileComboBox->currentText();
 	master.storeSynthProfile(newSynthProfile, name);
-	synthProfile.controlROMImage = NULL;
-	synthProfile.pcmROMImage = NULL;
 	master.loadSynthProfile(synthProfile, name);
 	synthRoute->setSynthProfile(synthProfile, name);
 	if (ui->profileCheckBox->isChecked()) master.setDefaultSynthProfileName(name);
@@ -272,7 +275,7 @@ void SynthPropertiesDialog::refreshProfileCombo(QString name) {
 
 QString SynthPropertiesDialog::getROMSetDescription() {
 	MT32Emu::FileStream file;
-	if (file.open((synthProfile.romDir.absolutePath() + QDir::separator() + synthProfile.controlROMFileName).toUtf8())) {
+	if (file.open(Master::getROMPathName(synthProfile.romDir, synthProfile.controlROMFileName).toUtf8())) {
 		const MT32Emu::ROMInfo *romInfo = MT32Emu::ROMInfo::getROMInfo(&file);
 		if (romInfo != NULL) {
 			QString des = romInfo->description;

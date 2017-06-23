@@ -1,5 +1,5 @@
 /* Copyright (C) 2003, 2004, 2005, 2006, 2008, 2009 Dean Beeler, Jerome Fisher
- * Copyright (C) 2011-2015 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
+ * Copyright (C) 2011-2017 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -17,6 +17,8 @@
 
 #ifndef MT32EMU_GLOBALS_H
 #define MT32EMU_GLOBALS_H
+
+#include "config.h"
 
 /* Support for compiling shared library. */
 #ifdef MT32EMU_SHARED
@@ -41,10 +43,10 @@
 #define MT32EMU_EXPORT_ATTRIBUTE
 #endif /* #ifdef MT32EMU_SHARED */
 
-#if MT32EMU_EXPORTS_TYPE == 0
-#define MT32EMU_EXPORT MT32EMU_EXPORT_ATTRIBUTE
-#else
+#if MT32EMU_EXPORTS_TYPE == 1 || MT32EMU_EXPORTS_TYPE == 2
 #define MT32EMU_EXPORT
+#else
+#define MT32EMU_EXPORT MT32EMU_EXPORT_ATTRIBUTE
 #endif
 
 /* Useful constants */
@@ -85,7 +87,7 @@
 #define MT32EMU_MAX_STREAM_BUFFER_SIZE 32768
 
 /* This should correspond to the MIDI buffer size used in real h/w devices.
- * CM-32L control ROM seems using 1000 bytes, old MT-32 isn't confirmed by now.
+ * CM-32L control ROM is using 1000 bytes, and MT-32 GEN0 is using only 240 bytes (semi-confirmed by now).
  */
 #define MT32EMU_SYSEX_BUFFER_SIZE 1000
 
@@ -112,6 +114,6 @@ const unsigned int SYSEX_BUFFER_SIZE = MT32EMU_SYSEX_BUFFER_SIZE;
 #undef MT32EMU_SYSEX_BUFFER_SIZE
 }
 
-#endif /* #if defined(__cplusplus) && !MT32EMU_C_INTERFACE */
+#endif /* #if defined(__cplusplus) && MT32EMU_API_TYPE != 1 */
 
 #endif /* #ifndef MT32EMU_GLOBALS_H */

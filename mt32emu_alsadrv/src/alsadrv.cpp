@@ -1,7 +1,7 @@
 /* Copyright (C) 2003 Tristan
  * Copyright (C) 2004, 2005 Tristan, Jerome Fisher
  * Copyright (C) 2008, 2011 Tristan, Jerome Fisher, Jörg Walter
- * Copyright (C) 2013-2015 Tristan, Jerome Fisher, Jörg Walter, Sergey V. Mikayev
+ * Copyright (C) 2013-2017 Tristan, Jerome Fisher, Jörg Walter, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -44,7 +44,7 @@ char *recwav_filename = NULL;
 FILE *recwav_file = NULL;
 
 #define PERC_CHANNEL  9 
-char rom_path[] = "/usr/share/mt32-rom-data/";
+const char default_rom_dir[] = "/usr/share/mt32-rom-data/";
 
 #include <mt32emu/mt32emu.h>
 
@@ -97,20 +97,11 @@ snd_seq_t *seq_handle = NULL;
 #define FRAGMENT_SIZE 256 // 2 milliseconds
 #define PERIOD_SIZE   128 // 1 millisecond
 
-#if ANALOG_MODE == 3
-static const MT32Emu::AnalogOutputMode ANALOG_OUTPUT_MODE = MT32Emu::AnalogOutputMode_OVERSAMPLED;
-const int SAMPLE_RATE = 96000;
-#elif ANALOG_MODE == 2
-static const MT32Emu::AnalogOutputMode ANALOG_OUTPUT_MODE = MT32Emu::AnalogOutputMode_ACCURATE;
-const int SAMPLE_RATE = 48000;
-#else
-#if ANALOG_MODE == 1
-static const MT32Emu::AnalogOutputMode ANALOG_OUTPUT_MODE = MT32Emu::AnalogOutputMode_COARSE;
-#else
-static const MT32Emu::AnalogOutputMode ANALOG_OUTPUT_MODE = MT32Emu::AnalogOutputMode_DIGITAL_ONLY;
-#endif
-const int SAMPLE_RATE = 32000;
-#endif
+MT32Emu::AnalogOutputMode analog_output_mode = MT32Emu::AnalogOutputMode_ACCURATE;
+unsigned int sample_rate = 48000;
+
+char *rom_dir = NULL;
+enum rom_search_type_t rom_search_type;
 
 int buffermsec = 100;
 int minimum_msec = 40;
@@ -124,7 +115,7 @@ int events_qd = 0;
 
 int tempo = -1, ppq = -1;
 double timepertick = -1;
-double bytespermsec = (double)(SAMPLE_RATE * 2 * 2) / 1000000.0;
+double bytespermsec = (double)(sample_rate * 2 * 2) / 1000000.0;
 
 int channelmap[16];
 int channeluse[16];
@@ -178,7 +169,7 @@ int alsa_set_buffer_time(int msec)
 	unsigned int v, rate, periods;
 	double sec, tpp;
 	
-	rate = SAMPLE_RATE;
+	rate = sample_rate;
 	channels = 2;
 	sec = (double)msec / 1000.0;
 	
@@ -911,7 +902,7 @@ int init_alsadrv()
 		exit(1);
 			
 	/* create pcm thread if needed */
-	alsa_init_pcm(SAMPLE_RATE, 2);
+	alsa_init_pcm(sample_rate, 2);
 		
 	/* create communication pipe from alsa reader to processor */
 	if (socketpair(PF_LOCAL, SOCK_STREAM, 0, eventpipe))
@@ -949,6 +940,43 @@ int init_alsadrv()
 	return 0;
 }
 
+static bool tryROMFile(const char romDir[], const char filename[], MT32Emu::FileStream &romFile) {
+	static const int MAX_PATH_LENGTH = 4096;
+
+	if ((strlen(romDir) + strlen(filename) + 1) > MAX_PATH_LENGTH) {
+		return false;
+	}
+	char romPathName[MAX_PATH_LENGTH];
+	strcpy(romPathName, romDir);
+	strcat(romPathName, filename);
+	return romFile.open(romPathName);
+}
+
+static void openROMFile(const char romDir[], const char romFile1[], const char romFile2[], MT32Emu::FileStream &romFile, const char romType[]) {
+	switch (rom_search_type) {
+	case ROM_SEARCH_TYPE_CM32L_ONLY:
+		if (!tryROMFile(romDir, romFile1, romFile)) {
+			report(DRV_MT32ROMFAIL, romType);
+			exit(1);
+		}
+		break;
+	case ROM_SEARCH_TYPE_MT32_ONLY:
+		if (!tryROMFile(romDir, romFile2, romFile)) {
+			report(DRV_MT32ROMFAIL, romType);
+			exit(1);
+		}
+		break;
+	default:
+		if (!tryROMFile(romDir, romFile1, romFile)) {
+			if (!tryROMFile(romDir, romFile2, romFile)) {
+				report(DRV_MT32ROMFAIL, romType);
+				exit(1);
+			}
+		}
+		break;
+	}
+}
+
 void reload_mt32_core(int rv)
 {
 	/* delete core if there is already an instance of it */
@@ -965,36 +993,23 @@ void reload_mt32_core(int rv)
 	MT32Emu::FileStream controlROMFile;
 	MT32Emu::FileStream pcmROMFile;
 
-	char controlROMFileName[256];
-	strcpy(controlROMFileName, rom_path);
-	strcat(controlROMFileName, "CM32L_CONTROL.ROM");
-	if (!controlROMFile.open(controlROMFileName)) {
-		strcpy(controlROMFileName, rom_path);
-		strcat(controlROMFileName, "MT32_CONTROL.ROM");
-		if (!controlROMFile.open(controlROMFileName)) {
-			report(DRV_MT32ROMFAIL, "Control");
-			exit(1);
-		}
+	char romDir[4096];
+	if (rom_dir != NULL) {
+		strcpy(romDir, rom_dir);
+		strcat(romDir, "/");
+	} else {
+		strcpy(romDir, default_rom_dir);
 	}
 
-	char pcmROMFileName[256];
-	strcpy(pcmROMFileName, rom_path);
-	strcat(pcmROMFileName, "CM32L_PCM.ROM");
-	if (!pcmROMFile.open(pcmROMFileName)) {
-		strcpy(pcmROMFileName, rom_path);
-		strcat(pcmROMFileName, "MT32_PCM.ROM");
-		if (!pcmROMFile.open(pcmROMFileName)) {
-			report(DRV_MT32ROMFAIL, "PCM");
-			exit(1);
-		}
-	}
+	openROMFile(romDir, "CM32L_CONTROL.ROM", "MT32_CONTROL.ROM", controlROMFile, "Control");
+	openROMFile(romDir, "CM32L_PCM.ROM", "MT32_PCM.ROM", pcmROMFile, "PCM");
 
 	const MT32Emu::ROMImage *controlROMImage = MT32Emu::ROMImage::makeROMImage(&controlROMFile);
 	const MT32Emu::ROMImage *pcmROMImage = MT32Emu::ROMImage::makeROMImage(&pcmROMFile);
 
 	/* create MT32Synth object */
 	mt32 = new MT32Emu::Synth(mt32ReportHandler);
-	if (mt32->open(*controlROMImage, *pcmROMImage, ANALOG_OUTPUT_MODE) == false) {
+	if (mt32->open(*controlROMImage, *pcmROMImage, analog_output_mode) == false) {
 		report(DRV_MT32FAIL);
 		exit(1);
 	}
@@ -1012,7 +1027,7 @@ void reload_mt32_core(int rv)
 	mt32->setReverbOutputGain(gain_multiplier);
 }
 
-int process_loop(int rv) 
+int process_loop(int rv)
 {
 	unsigned char processbuffer[FRAGMENT_SIZE];
 	unsigned int msg;
@@ -1032,7 +1047,7 @@ int process_loop(int rv)
 	rv_level = 3;
 	consumer_types = 0;
 	
-	reload_mt32_core(rv);			
+	reload_mt32_core(rv);
 	
 	/* setup poll info */
 	event_poll.fd = eventpipe[0];
@@ -1187,7 +1202,7 @@ int process_loop(int rv)
 		
 		    case EVENT_RESET:
 			reload_mt32_core(rv);
-			break;			
+			break;
 			
 		    case EVENT_WAVREC_ON:
 			start_recordwav();

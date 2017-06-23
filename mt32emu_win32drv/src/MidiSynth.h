@@ -1,4 +1,4 @@
-/* Copyright (C) 2011, 2012, 2013, 2014 Sergey V. Mikayev
+/* Copyright (C) 2011-2017 Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -34,6 +34,7 @@ private:
 	DACInputMode emuDACInputMode;
 	MIDIDelayMode midiDelayMode;
 	AnalogOutputMode analogOutputMode;
+	RendererType rendererType;
 	float outputGain;
 	float reverbOutputGain;
 	bool reverbEnabled;

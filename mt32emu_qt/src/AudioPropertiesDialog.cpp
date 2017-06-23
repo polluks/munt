@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2015 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -33,7 +33,7 @@ AudioPropertiesDialog::~AudioPropertiesDialog()
 
 void AudioPropertiesDialog::getData(AudioDriverSettings &driverSettings) {
 	driverSettings.sampleRate = ui->sampleRate->currentText().toUInt();
-	driverSettings.srcQuality = (SampleRateConverter::SRCQuality)ui->srcQuality->currentIndex();
+	driverSettings.srcQuality = MT32Emu::SamplerateConversionQuality(ui->srcQuality->currentIndex());
 	driverSettings.chunkLen = ui->chunkLen->text().toInt();
 	driverSettings.audioLatency = ui->audioLatency->text().toInt();
 	driverSettings.midiLatency = ui->midiLatency->text().toInt();

@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2015 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -283,12 +283,20 @@ void SynthRoute::setAnalogOutputMode(AnalogOutputMode analogOutputMode) {
 	qSynth.setAnalogOutputMode(analogOutputMode);
 }
 
+void SynthRoute::setRendererType(RendererType rendererType) {
+	qSynth.setRendererType(rendererType);
+}
+
 void SynthRoute::getSynthProfile(SynthProfile &synthProfile) const {
 	qSynth.getSynthProfile(synthProfile);
 }
 
 void SynthRoute::setSynthProfile(const SynthProfile &synthProfile, QString useSynthProfileName) {
 	qSynth.setSynthProfile(synthProfile, useSynthProfileName);
+}
+
+void SynthRoute::getROMImages(const MT32Emu::ROMImage *&controlROMImage, const MT32Emu::ROMImage *&pcmROMImage) const {
+	qSynth.getROMImages(controlROMImage, pcmROMImage);
 }
 
 unsigned int SynthRoute::getPartialCount() const {
@@ -309,4 +317,16 @@ void SynthRoute::getPartialStates(PartialState *partialStates) const {
 
 unsigned int SynthRoute::getPlayingNotes(unsigned int partNumber, MT32Emu::Bit8u *keys, MT32Emu::Bit8u *velocities) const {
 	return qSynth.getPlayingNotes(partNumber, keys, velocities);
+}
+
+void SynthRoute::startRecordingAudio(const QString &fileName) {
+	qSynth.startRecordingAudio(fileName);
+}
+
+void SynthRoute::stopRecordingAudio() {
+	qSynth.stopRecordingAudio();
+}
+
+bool SynthRoute::isRecordingAudio() const {
+	return qSynth.isRecordingAudio();
 }

@@ -81,8 +81,8 @@ the main UI-enabled application will apply to the internal synth engine as well.
 14) You almost certainly *will* need to reboot the computer for the change to take effect.
 
 
-Upgrading
----------
+Uninstalling
+------------
 
 Run "drvsetup.exe uninstall" to remove the driver. This will not affect any configuration
 variables set using the main UI-enabled application.
@@ -92,7 +92,7 @@ License
 -------
 
 Copyright (C) 2003, 2004, 2005, 2011 Dean Beeler, Jerome Fisher
-Copyright (C) 2011-2016 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
+Copyright (C) 2011-2017 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
 
 This library is free software; you can redistribute it and/or
 modify it under the terms of the GNU Lesser General Public
