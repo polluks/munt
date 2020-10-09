@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2009, 2011 Jerome Fisher
- * Copyright (C) 2012-2017 Jerome Fisher, Sergey V. Mikayev
+ * Copyright (C) 2012-2020 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #include <cerrno>
 #include <cfloat>
 #include <climits>
+#include <clocale>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -30,7 +31,7 @@
 #define MT32EMU_API_TYPE 3
 #include <mt32emu/mt32emu.h>
 
-#if MT32EMU_VERSION_MAJOR != 2 || MT32EMU_VERSION_MINOR < 1
+#if MT32EMU_VERSION_MAJOR != 2 || MT32EMU_VERSION_MINOR < 2
 #error Incompatible mt32emu library version
 #endif
 
@@ -99,6 +100,7 @@ struct Options {
 	MT32Emu::AnalogOutputMode analogOutputMode;
 	MT32Emu::RendererType rendererType;
 	MT32Emu::SamplerateConversionQuality srcQuality;
+	int partialCount;
 	int rawChannelMap[8];
 	int rawChannelCount;
 
@@ -110,6 +112,7 @@ struct Options {
 	gboolean waitForLA32;
 	gboolean waitForReverb;
 	gboolean sendAllNotesOff;
+	gboolean niceAmpRamp;
 };
 
 struct State {
@@ -138,6 +141,7 @@ static bool parseOptions(int argc, char *argv[], Options *options) {
 	gint analogOutputModeIx = 0;
 	gint rendererTypeIx = 0;
 	gint srcQualityIx = 2;
+	gint partialCount = MT32Emu::DEFAULT_MAX_PARTIALS;
 	gint outputSampleFormat = OUTPUT_SAMPLE_FORMAT_SINT16;
 	gint bufferFrameCount = DEFAULT_BUFFER_SIZE;
 	gint renderMinFrames = 0;
@@ -165,6 +169,7 @@ static bool parseOptions(int argc, char *argv[], Options *options) {
 	options->waitForLA32 = true;
 	options->waitForReverb = true;
 	options->sendAllNotesOff = true;
+	options->niceAmpRamp = true;
 	// FIXME: Perhaps there's a nicer way to represent long argument descriptions...
 	GOptionEntry entries[] = {
 		{"output", 'o', 0, G_OPTION_ARG_FILENAME, &options->outputFilename, "Output file (default: last source file name with \".wav\" appended)", "<filename>"},
@@ -175,7 +180,7 @@ static bool parseOptions(int argc, char *argv[], Options *options) {
 		// buffer-size determines the maximum number of frames to be rendered by the emulator in one pass.
 		// This can have a big impact on performance (Generally more at a time=better).
 		{"buffer-size", 'b', 0, G_OPTION_ARG_INT, &bufferFrameCount, "Buffer size in frames (minimum: 1)", "<frame_count>"},  // FIXME: Show default
-		{"sample-rate", 'p', 0, G_OPTION_ARG_INT, &options->sampleRate, "Sample rate in Hz (minimum: 1, default: auto)"
+		{"sample-rate", 'p', 0, G_OPTION_ARG_INT, &options->sampleRate, "Sample rate in Hz (minimum: 1, default: auto)\n"
 		 "                Ignored if -w is used (in which case auto is always used)\n", "<sample_rate>"},
 
 		{"src-quality", 'q', 0, G_OPTION_ARG_INT, &srcQualityIx, "Sample rate conversion quality (default: 2)\n"
@@ -183,6 +188,9 @@ static bool parseOptions(int argc, char *argv[], Options *options) {
 		 "                 1: FAST\n"
 		 "                 2: GOOD\n"
 		 "                 3: BEST", "<src_quality>"},
+
+		{"max-partials", 'x', 0, G_OPTION_ARG_INT, &partialCount, "The maximum number of partials playing simultaneously.\n"
+		 "                (minimum: 8, default: 32)\n", "<max-partials>"},
 
 		{"analog-output-mode", 'a', 0, G_OPTION_ARG_INT, &analogOutputModeIx, "Analogue low-pass filter emulation mode (default: 0)\n"
 		 "                Ignored if -w is used (in which case 0/DISABLED is always used)\n"
@@ -225,6 +233,8 @@ static bool parseOptions(int argc, char *argv[], Options *options) {
 		{"no-wait-for-reverb", 0, G_OPTION_FLAG_REVERSE, G_OPTION_ARG_NONE, &options->waitForReverb, "Don't wait for reverb to finish after each SMF file has ended.", NULL},
 		{"no-send-all-notes-off", 0, G_OPTION_FLAG_REVERSE, G_OPTION_ARG_NONE, &options->sendAllNotesOff, "Don't release the hold pedal and perform all-notes-off on all parts in the emulator at the end of each SMF file.\n"
 		 "                WARNING: Sound can theoretically continue forever if not limited by other options.", NULL},
+		{"no-nice-amp-ramp", 0, G_OPTION_FLAG_REVERSE, G_OPTION_ARG_NONE, &options->niceAmpRamp, "Emulate amplitude ramp accurately.\n"
+		 "                Quick changes of volume or expression on a MIDI channel may result in amp jumps which are avoided by default.", NULL},
 
 		{"s", 's', 0, G_OPTION_ARG_FILENAME, &deprecatedSysexFile, "[DEPRECATED] Play this SMF or sysex file before any other. DEPRECATED: Instead just specify the file first in the file list.", "<midi_file>"},
 		{G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_FILENAME_ARRAY, &options->inputFilenames, NULL, "<midi_file> [midi_file...]"},
@@ -263,6 +273,7 @@ static bool parseOptions(int argc, char *argv[], Options *options) {
 	} else {
 		options->bufferFrameCount = bufferFrameCount;
 	}
+	options->partialCount = partialCount < 8 ? 8 : partialCount;
 	options->renderMaxFrames = renderMaxFrames < 0 ? INT_MAX : renderMaxFrames;
 	options->renderMinFrames = renderMinFrames < 0 ? 0 : renderMinFrames;
 	if (options->renderMinFrames > options->renderMaxFrames) {
@@ -423,13 +434,13 @@ static bool playSysexFileBuffer(MT32Emu::Service &service, const gchar *displayF
 			if (start != -1) {
 				fprintf(stderr, "Started a new sysex message before the last finished - sysex file '%s' may be in an unsupported format.\n", displayFilename);
 			}
-			start = i;
+			start = long(i);
 		}
 		else if (fileBuffer[i] == 0xF7) {
 			if (start == -1) {
 				fprintf(stderr, "Ended a sysex message without a start byte - sysex file '%s' may be in an unsupported format.\n", displayFilename);
 			} else {
-				service.playSysexNow((MT32Emu::Bit8u*)(fileBuffer + start), i - start + 1);
+				service.playSysexNow((MT32Emu::Bit8u*)(fileBuffer + start), MT32Emu::Bit32u(i - start + 1));
 			}
 			start = -1;
 		}
@@ -625,6 +636,7 @@ static void playSMF(smf_t *smf, const Options &options, State &state) {
 	int unterminatedSysexLen = 0;
 	unsigned char *unterminatedSysex = NULL;
 	unsigned long renderedFrames = 0;
+	smf_rewind(smf);
 	for (;;) {
 		smf_event_t *event = smf_get_next_event(smf);
 		unsigned long eventFrameIx;
@@ -713,9 +725,9 @@ static void playSMF(smf_t *smf, const Options &options, State &state) {
 	}
 	flushSilence(MIDI_ENDED, options, state);
 	if (options.sendAllNotesOff) {
-		for (unsigned char part = 0; part < 9; part++) {
-			state.service.playMsg(0x0040B0 & part); // Release sustain pedal
-			state.service.playMsg(0x007BB0 & part); // All notes off
+		for (unsigned char channel = 0; channel < 16; channel++) {
+			state.service.playMsg(0x0040B0 | channel); // Release sustain pedal
+			state.service.playMsg(0x007BB0 | channel); // All notes off
 		}
 	}
 	if (state.lastInputFile && options.renderMinFrames > state.renderedFrames) {
@@ -759,7 +771,7 @@ static bool playFile(const gchar *inputFilename, const gchar *displayInputFilena
 	if (fileBuffer[0] == 0xF0) {
 		return playSysexFileBuffer(state.service, displayInputFilename, fileBuffer, fileBufferLength);
 	}
-	smf_t *smf = smf_load_from_memory(fileBuffer, fileBufferLength);
+	smf_t *smf = smf_load_from_memory(fileBuffer, int(fileBufferLength));
 	if (smf != NULL) {
 		if (!options.quiet) {
 			char *decoded = smf_decode(smf);
@@ -778,10 +790,11 @@ static bool playFile(const gchar *inputFilename, const gchar *displayInputFilena
 int main(int argc, char *argv[]) {
 	Options options;
 	MT32Emu::Service service;
+	setlocale(LC_ALL, "");
 	printf("Munt MT32Emu MIDI to Wave Conversion Utility. Version %s\n", VERSION);
 	printf("  Copyright (C) 2009, 2011 Jerome Fisher <re_munt@kingguppy.com>\n");
-	printf("  Copyright (C) 2012-2017 Jerome Fisher, Sergey V. Mikayev\n");
-	printf("Using Munt MT32Emu Library Version %s, libsmf Version %s\n", service.getLibraryVersionString(), smf_get_version());
+	printf("  Copyright (C) 2012-2020 Jerome Fisher, Sergey V. Mikayev\n");
+	printf("Using Munt MT32Emu Library Version %s, libsmf Version %s (with modifications)\n", service.getLibraryVersionString(), smf_get_version());
 	if (!parseOptions(argc, argv, &options)) {
 		return -1;
 	}
@@ -791,10 +804,10 @@ int main(int argc, char *argv[]) {
 		outputFilename = options.outputFilename;
 	} else {
 		gchar *lastInputFilename = options.inputFilenames[g_strv_length(options.inputFilenames) - 1];
-		unsigned long allocLen = strlen(lastInputFilename) + 5;
+		size_t allocLen = strlen(lastInputFilename) + 5;
 		outputFilename = (gchar *)malloc(allocLen);
 		if(outputFilename == NULL) {
-			fprintf(stderr, "Error allocating %lu bytes for destination filename.\n", allocLen);
+			fprintf(stderr, "Error allocating %lu bytes for destination filename.\n", (unsigned long)allocLen);
 			return -1;
 		}
 		if (options.rawChannelCount > 0) {
@@ -809,33 +822,45 @@ int main(int argc, char *argv[]) {
 	gchar *baseDir = options.romDir;
 	if (baseDir == NULL)
 		baseDir = (gchar *)"";
-	gchar pathName[2048];
-	g_strlcpy(pathName, baseDir, 2048);
-	g_strlcat(pathName, "CM32L_CONTROL.ROM", 2048);
+	gchar pathNameUtf8[2048];
+	g_strlcpy(pathNameUtf8, baseDir, 2048);
+	g_strlcat(pathNameUtf8, "CM32L_CONTROL.ROM", 2048);
+	gchar *pathName = g_locale_from_utf8(pathNameUtf8, strlen(pathNameUtf8), NULL, NULL, NULL);
 	if (service.addROMFile(pathName) != MT32EMU_RC_ADDED_CONTROL_ROM) {
-		g_strlcpy(pathName, baseDir, 2048);
-		g_strlcat(pathName, "MT32_CONTROL.ROM", 2048);
+		g_free(pathName);
+		g_strlcpy(pathNameUtf8, baseDir, 2048);
+		g_strlcat(pathNameUtf8, "MT32_CONTROL.ROM", 2048);
+		pathName = g_locale_from_utf8(pathNameUtf8, strlen(pathNameUtf8), NULL, NULL, NULL);
 		if (service.addROMFile(pathName) != MT32EMU_RC_ADDED_CONTROL_ROM) {
 			fprintf(stderr, "Control ROM not found.\n");
 			return 1;
 		}
 	}
-	g_strlcpy(pathName, baseDir, 2048);
-	g_strlcat(pathName, "CM32L_PCM.ROM", 2048);
+	g_free(pathName);
+	g_strlcpy(pathNameUtf8, baseDir, 2048);
+	g_strlcat(pathNameUtf8, "CM32L_PCM.ROM", 2048);
+	pathName = g_locale_from_utf8(pathNameUtf8, strlen(pathNameUtf8), NULL, NULL, NULL);
 	if (service.addROMFile(pathName) != MT32EMU_RC_ADDED_PCM_ROM) {
-		g_strlcpy(pathName, baseDir, 2048);
-		g_strlcat(pathName, "MT32_PCM.ROM", 2048);
+		g_free(pathName);
+		g_strlcpy(pathNameUtf8, baseDir, 2048);
+		g_strlcat(pathNameUtf8, "MT32_PCM.ROM", 2048);
+		pathName = g_locale_from_utf8(pathNameUtf8, strlen(pathNameUtf8), NULL, NULL, NULL);
 		if (service.addROMFile(pathName) != MT32EMU_RC_ADDED_PCM_ROM) {
 			fprintf(stderr, "PCM ROM not found.\n");
 			return 1;
 		}
 	}
+	g_free(pathName);
 	service.setStereoOutputSampleRate(options.sampleRate);
 	service.setSamplerateConversionQuality(options.srcQuality);
+	service.setPartialCount(options.partialCount);
 	service.setAnalogOutputMode(options.analogOutputMode);
 	service.selectRendererType(options.rendererType);
 	if (service.openSynth() == MT32EMU_RC_OK) {
 		service.setDACInputMode(options.dacInputMode);
+		if (!options.niceAmpRamp) {
+			service.setNiceAmpRampEnabled(false);
+		}
 		options.sampleRate = service.getActualStereoOutputSamplerate();
 		printf("Using output sample rate %d Hz\n", options.sampleRate);
 

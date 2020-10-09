@@ -42,8 +42,9 @@ private:
 	void trayIconContextMenu();
 
 private slots:
+	void on_actionExit_triggered();
 	void on_actionAbout_triggered();
-	void handleSynthRouteAdded(SynthRoute *synthRoute, const AudioDevice *audioDevice);
+	void handleSynthRouteAdded(SynthRoute *synthRoute, const AudioDevice *audioDevice, bool pinnable);
 	void handleSynthRouteRemoved(SynthRoute *synthRoute);
 	void handleROMSLoadFailed(bool &recoveryAttempted);
 	void on_menuMIDI_aboutToShow();
@@ -53,6 +54,7 @@ private slots:
 	void on_actionConvert_MIDI_to_Wave_triggered();
 	void on_menuOptions_aboutToShow();
 	void on_actionStart_iconized_toggled(bool checked);
+	void on_actionHide_to_tray_on_close_toggled(bool checked);
 	void on_actionShow_LCD_balloons_toggled(bool checked);
 	void on_actionShow_connection_balloons_toggled(bool checked);
 	void on_actionROM_Configuration_triggered();
@@ -62,6 +64,12 @@ private slots:
 	void toggleShowConsole();
 	void handlePlayMidiFiles(const QStringList &fileList);
 	void handleConvertMidiFiles(const QStringList &fileList);
+
+#ifdef WITH_JACK_MIDI_DRIVER
+private slots:
+	void on_actionNew_JACK_MIDI_port_triggered();
+	void on_actionNew_exclusive_JACK_MIDI_port_triggered();
+#endif
 };
 
 #endif // MAINWINDOW_H

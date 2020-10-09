@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="windows-1251"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
-	Version="9,00"
-	Name="mt32emu_win32drv_setup"
+	Version="9.00"
+	Name="drvsetup"
 	ProjectGUID="{865C8AAD-4B25-498F-B311-AEDB80898983}"
-	RootNamespace="mt32emu_win32drv_setup"
+	RootNamespace="drvsetup"
 	Keyword="Win32Proj"
 	TargetFrameworkVersion="196613"
 	>
@@ -63,11 +63,12 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
+				AdditionalDependencies="setupapi.lib"
 				LinkIncremental="2"
 				UACExecutionLevel="2"
-				UACUIAccess="true"
 				GenerateDebugInformation="true"
-				SubSystem="1"
+				SubSystem="2"
+				EntryPointSymbol="mainCRTStartup"
 				TargetMachine="1"
 			/>
 			<Tool
@@ -122,7 +123,7 @@
 				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES=1;_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES_COUNT=1;_CRT_SECURE_NO_WARNINGS"
 				RuntimeLibrary="0"
 				EnableFunctionLevelLinking="true"
-				UsePrecompiledHeader="0"
+				UsePrecompiledHeader="2"
 				WarningLevel="3"
 				DebugInformationFormat="3"
 			/>
@@ -137,14 +138,14 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				OutputFile="$(OutDir)\drvsetup.exe"
+				AdditionalDependencies="setupapi.lib"
 				LinkIncremental="1"
 				UACExecutionLevel="2"
 				GenerateDebugInformation="true"
-				SubSystem="1"
+				SubSystem="2"
 				OptimizeReferences="2"
 				EnableCOMDATFolding="2"
-				EntryPointSymbol=""
+				EntryPointSymbol="mainCRTStartup"
 				TargetMachine="1"
 			/>
 			<Tool
@@ -214,7 +215,6 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				OutputFile="$(OutDir)\drvsetup.exe"
 				LinkIncremental="1"
 				UACExecutionLevel="2"
 				GenerateDebugInformation="true"
@@ -255,14 +255,22 @@
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
 			<File
-				RelativePath="..\..\munt\mt32emu_win32drv_setup\mt32emu_win32drv_setup.cpp"
+				RelativePath="..\..\..\munt\mt32emu_win32drv_setup\drvsetup\drvsetup.cpp"
 				>
 			</File>
 			<File
-				RelativePath="..\..\munt\mt32emu_win32drv_setup\stdafx.cpp"
+				RelativePath="..\..\..\munt\mt32emu_win32drv_setup\drvsetup\stdafx.cpp"
 				>
 				<FileConfiguration
 					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="1"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32"
 					>
 					<Tool
 						Name="VCCLCompilerTool"
@@ -277,7 +285,7 @@
 			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
 			>
 			<File
-				RelativePath="..\..\munt\mt32emu_win32drv_setup\stdafx.h"
+				RelativePath="..\..\..\munt\mt32emu_win32drv_setup\drvsetup\stdafx.h"
 				>
 			</File>
 		</Filter>

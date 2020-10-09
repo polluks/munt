@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2019 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -18,11 +18,12 @@
 #include <QMessageBox>
 
 #ifdef WITH_WINCONSOLE
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0500
-#endif
+#if _WIN32_WINNT < 0x0500
+#undef WITH_WINCONSOLE
+#else // _WIN32_WINNT < 0x0500
 #include <windows.h>
-#endif
+#endif // _WIN32_WINNT < 0x0500
+#endif // defined(WITH_WINCONSOLE)
 
 #ifndef BUILD_DATE
 #ifdef __DATE__
@@ -51,14 +52,14 @@ MainWindow::MainWindow(Master *master, QWidget *parent) :
 	midiConverterDialog(NULL)
 {
 	ui->setupUi(this);
-	connect(master, SIGNAL(synthRouteAdded(SynthRoute *, const AudioDevice *)), SLOT(handleSynthRouteAdded(SynthRoute *, const AudioDevice *)));
+	connect(master, SIGNAL(synthRouteAdded(SynthRoute *, const AudioDevice *, bool)), SLOT(handleSynthRouteAdded(SynthRoute *, const AudioDevice *, bool)));
 	connect(master, SIGNAL(synthRouteRemoved(SynthRoute *)), SLOT(handleSynthRouteRemoved(SynthRoute *)));
 	connect(master, SIGNAL(synthRoutePinned()), SLOT(refreshTabNames()));
 	connect(master, SIGNAL(romsLoadFailed(bool &)), SLOT(handleROMSLoadFailed(bool &)), Qt::DirectConnection);
 	connect(master, SIGNAL(playMidiFiles(const QStringList &)), SLOT(handlePlayMidiFiles(const QStringList &)), Qt::QueuedConnection);
 	connect(master, SIGNAL(convertMidiFiles(const QStringList &)), SLOT(handleConvertMidiFiles(const QStringList &)), Qt::QueuedConnection);
 	connect(master, SIGNAL(mainWindowTitleUpdated(const QString &)), SLOT(setWindowTitle(const QString &)));
-	connect(master, SIGNAL(maxSessionsFinished()), SLOT(close()));
+	connect(master, SIGNAL(maxSessionsFinished()), SLOT(on_actionExit_triggered()));
 
 	if (master->getTrayIcon() != NULL) {
 		connect(master->getTrayIcon(), SIGNAL(activated(QSystemTrayIcon::ActivationReason)), SLOT(handleTrayIconActivated(QSystemTrayIcon::ActivationReason)));
@@ -77,6 +78,11 @@ MainWindow::MainWindow(Master *master, QWidget *parent) :
 	if (!master->getSettings()->value("Master/showConsole", false).toBool())
 		ShowWindow(GetConsoleWindow(), SW_HIDE);
 #endif
+
+#ifdef WITH_JACK_MIDI_DRIVER
+	ui->actionNew_JACK_MIDI_port->setVisible(true);
+	ui->actionNew_exclusive_JACK_MIDI_port->setVisible(true);
+#endif
 }
 
 MainWindow::~MainWindow()
@@ -85,6 +91,17 @@ MainWindow::~MainWindow()
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
+	QSettings *settings = Master::getInstance()->getSettings();
+	if (settings->value("Master/hideToTrayOnClose", false).toBool()) {
+		event->ignore();
+		hide();
+	} else {
+		event->accept();
+		on_actionExit_triggered();
+	}
+}
+
+void MainWindow::on_actionExit_triggered() {
 	QSettings *settings = Master::getInstance()->getSettings();
 	settings->setValue("Master/mainWindowGeometry", geometry());
 	if (testMidiDriver != NULL) {
@@ -103,7 +120,6 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 		delete midiConverterDialog;
 		midiConverterDialog = NULL;
 	}
-	event->accept();
 	QApplication::quit();
 }
 
@@ -119,7 +135,7 @@ void MainWindow::on_actionAbout_triggered()
 		"Build Arch: " BUILD_SYSTEM " " + QString::number(QSysInfo::WordSize) + "-bit\n"
 		"Build Date: " BUILD_DATE "\n"
 		"\n"
-		"Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev\n"
+		"Copyright (C) 2011-2019 Jerome Fisher, Sergey V. Mikayev\n"
 		"\n"
 		"Licensed under GPL v3 or any later version."
 	);
@@ -128,20 +144,19 @@ void MainWindow::on_actionAbout_triggered()
 void MainWindow::refreshTabNames()
 {
 	QWidget *widget;
-	QString tabName;
 	for(int i = 0;; i++) {
 		widget = ui->synthTabs->widget(i);
 		if (widget == NULL) return;
-		tabName.sprintf("Synth &%i", i + 1);
+		QString tabName = QString("Synth &%1").arg(i + 1);
 		if (master->isPinned(((SynthWidget *)widget)->getSynthRoute())) tabName = tabName + " *";
 		ui->synthTabs->setTabText(i, tabName);
 	}
 }
 
-void MainWindow::handleSynthRouteAdded(SynthRoute *synthRoute, const AudioDevice *audioDevice) {
-	SynthWidget *synthWidget = new SynthWidget(master, synthRoute, audioDevice, this);
+void MainWindow::handleSynthRouteAdded(SynthRoute *synthRoute, const AudioDevice *audioDevice, bool pinnable) {
+	SynthWidget *synthWidget = new SynthWidget(master, synthRoute, pinnable, audioDevice, this);
 	int newTabIx = ui->synthTabs->count();
-	ui->synthTabs->addTab(synthWidget, QString().sprintf("Synth &%i", ui->synthTabs->count() + 1));
+	ui->synthTabs->addTab(synthWidget, QString("Synth &%1").arg(ui->synthTabs->count() + 1));
 	ui->synthTabs->setCurrentIndex(newTabIx);
 }
 
@@ -208,12 +223,17 @@ void MainWindow::on_actionConvert_MIDI_to_Wave_triggered() {
 
 void MainWindow::on_menuOptions_aboutToShow() {
 	ui->actionStart_iconized->setChecked(master->getSettings()->value("Master/startIconized", false).toBool());
+	ui->actionHide_to_tray_on_close->setChecked(master->getSettings()->value("Master/hideToTrayOnClose", false).toBool());
 	ui->actionShow_LCD_balloons->setChecked(master->getSettings()->value("Master/showLCDBalloons", true).toBool());
 	ui->actionShow_connection_balloons->setChecked(master->getSettings()->value("Master/showConnectionBalloons", true).toBool());
 }
 
 void MainWindow::on_actionStart_iconized_toggled(bool checked) {
 	master->getSettings()->setValue("Master/startIconized", checked);
+}
+
+void MainWindow::on_actionHide_to_tray_on_close_toggled(bool checked) {
+	master->getSettings()->setValue("Master/hideToTrayOnClose", checked);
 }
 
 void MainWindow::on_actionShow_LCD_balloons_toggled(bool checked) {
@@ -254,7 +274,7 @@ void MainWindow::trayIconContextMenu() {
 	a->setCheckable(true);
 	a->setChecked(master->getSettings()->value("Master/showConsole", false).toBool());
 #endif
-	menu->addAction("Exit", this, SLOT(close()));
+	menu->addAction("Exit", this, SLOT(on_actionExit_triggered()));
 	master->getTrayIcon()->setContextMenu(menu);
 }
 
@@ -295,6 +315,7 @@ void MainWindow::handlePlayMidiFiles(const QStringList &fileList) {
 void MainWindow::handleConvertMidiFiles(const QStringList &fileList) {
 	qDebug() << "Converting:" << fileList;
 	on_actionConvert_MIDI_to_Wave_triggered();
+	connect(midiConverterDialog, SIGNAL(batchConversionFinished()), SLOT(on_actionExit_triggered()));
 	midiConverterDialog->startConversion(fileList);
 }
 
@@ -313,3 +334,15 @@ void MainWindow::dropEvent(QDropEvent *e) {
 		midiPlayerDialog->dropEvent(e);
 	}
 }
+
+#ifdef WITH_JACK_MIDI_DRIVER
+void MainWindow::on_actionNew_JACK_MIDI_port_triggered() {
+	if (master->createJACKMidiPort(false)) return;
+	QMessageBox::warning(this, "Error", "Failed to create JACK MIDI port");
+}
+
+void MainWindow::on_actionNew_exclusive_JACK_MIDI_port_triggered() {
+	if (master->createJACKMidiPort(true)) return;
+	QMessageBox::warning(this, "Error", "Failed to create JACK MIDI port");
+}
+#endif

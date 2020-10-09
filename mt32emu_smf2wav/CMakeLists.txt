@@ -4,8 +4,8 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/../cmake
 
 project(mt32emu-smf2wav CXX)
 set(mt32emu_smf2wav_VERSION_MAJOR 1)
-set(mt32emu_smf2wav_VERSION_MINOR 3)
-set(mt32emu_smf2wav_VERSION_PATCH 0)
+set(mt32emu_smf2wav_VERSION_MINOR 5)
+set(mt32emu_smf2wav_VERSION_PATCH 2)
 set(mt32emu_smf2wav_VERSION "${mt32emu_smf2wav_VERSION_MAJOR}.${mt32emu_smf2wav_VERSION_MINOR}.${mt32emu_smf2wav_VERSION_PATCH}")
 
 add_definitions(-DVERSION="${mt32emu_smf2wav_VERSION}")
@@ -25,7 +25,7 @@ include_directories(${MT32EMU_INCLUDE_DIRS})
 include_directories(libsmf/src)
 add_subdirectory(libsmf)
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER MATCHES "(^|/)clang\\+\\+$")
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID STREQUAL Clang)
   add_definitions(-Wall -Wextra -Wnon-virtual-dtor -Wshadow -ansi -pedantic)
 endif()
 
@@ -65,6 +65,7 @@ set(CPACK_PACKAGE_VERSION_MINOR "${mt32emu_smf2wav_VERSION_MINOR}")
 set(CPACK_PACKAGE_VERSION_PATCH "${mt32emu_smf2wav_VERSION_PATCH}")
 set(CPACK_PACKAGE_VENDOR "muntemu.org")
 set(CPACK_PACKAGE_CONTACT "sergm@muntemu.org")
+set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../FreeBSD/usr/ports/audio/mt32emu_smf2wav/pkg-descr")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Experimental program for converting SMF (Standard MIDI File) to WAVE via libmt32emu")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/COPYING.txt")
 set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.txt")

@@ -46,6 +46,8 @@ private:
 public:
 	static Master *getInstance();
 	static void isSupportedDropEvent(QDropEvent *e);
+	static QStringList parseMidiListFromUrls(const QList<QUrl> urls);
+	static QStringList parseMidiListFromPathName(const QString pathName);
 	static const QString getROMPathName(const QDir &romDir, QString romFileName);
 
 	// May only be called from the application thread
@@ -83,14 +85,28 @@ private slots:
 	void updateMainWindowTitleContribution(const QString &titleContribution);
 
 signals:
-	void synthRouteAdded(SynthRoute *route, const AudioDevice *audioDevice);
+	void synthRouteAdded(SynthRoute *route, const AudioDevice *audioDevice, bool pinnable);
 	void synthRouteRemoved(SynthRoute *route);
 	void synthRoutePinned();
+	void synthRoutePinnable();
 	void romsLoadFailed(bool &recoveryAttempted);
 	void playMidiFiles(const QStringList &);
 	void convertMidiFiles(const QStringList &);
 	void mainWindowTitleUpdated(const QString &);
 	void maxSessionsFinished();
+
+#ifdef WITH_JACK_MIDI_DRIVER
+private:
+	MidiDriver *jackMidiDriver;
+
+public:
+	bool createJACKMidiPort(bool exclusive);
+	void deleteJACKMidiPort(MidiSession *midiSession);
+	MidiSession *createExclusiveJACKMidiPort(QString portName);
+
+signals:
+	void jackMidiPortDeleted(MidiSession *);
+#endif
 };
 
 #endif

@@ -25,7 +25,7 @@ and is able to operate in stand-alone mode if the main application mt32emu_qt is
 
 mt32emu_win32drv_setup
 ======================
-A tool intended to fascilitate installation / upgrade of the Windows driver mt32emu_win32drv.
+Helper tools intended to facilitate installation / upgrade of the Windows driver mt32emu_win32drv.
 
 mt32emu_qt
 ==========
@@ -34,7 +34,7 @@ Main synthesiser application. It makes use of mt32emu and Qt to provide for:
 1) Multiple simultaneous synths, GUI to configure synths, manage ROMs and connections
 2) Funny LCD
 3) Easy usage in different operating system environments:
-   Windows multimedia, PulseAudio, ALSA, OSS and CoreMIDI supported
+   Windows multimedia, PulseAudio, JACK, ALSA, OSS and CoreMIDI supported
 4) Play and record Standard MIDI files
 5) Perform batch conversion of Standard MIDI files directly to .wav / .raw audio files
 

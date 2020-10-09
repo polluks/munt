@@ -1,5 +1,5 @@
 /* Copyright (C) 2003, 2004, 2005, 2006, 2008, 2009 Dean Beeler, Jerome Fisher
- * Copyright (C) 2011-2017 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
+ * Copyright (C) 2011-2020 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -38,7 +38,7 @@ class Analog {
 public:
 	static Analog *createAnalog(const AnalogOutputMode mode, const bool oldMT32AnalogLPF, const RendererType rendererType);
 
-	virtual ~Analog() {};
+	virtual ~Analog() {}
 	virtual unsigned int getOutputSampleRate() const = 0;
 	virtual Bit32u getDACStreamsLength(const Bit32u outputLength) const = 0;
 	virtual void setSynthOutputGain(const float synthGain) = 0;

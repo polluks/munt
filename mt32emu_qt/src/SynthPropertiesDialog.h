@@ -37,6 +37,7 @@ private slots:
 	void on_changeROMSetButton_clicked();
 	void on_midiDelayEmuComboBox_currentIndexChanged(int);
 	void on_dacEmuComboBox_currentIndexChanged(int);
+	void on_maxPartialsSpinBox_valueChanged(int);
 	void on_analogComboBox_currentIndexChanged(int);
 	void on_rendererTypeComboBox_currentIndexChanged(int);
 	void on_reverbCompatibilityComboBox_currentIndexChanged(int);
@@ -48,6 +49,7 @@ private slots:
 	void on_reverseStereoCheckBox_stateChanged(int state);
 	void on_assignChannels2_10Button_clicked();
 	void on_assignChannels1_8_10Button_clicked();
+	void on_niceAmpRampCheckBox_stateChanged(int state);
 	void on_engageChannel1CheckBox_stateChanged(int state);
 	void updateReverbSettings();
 	void handleReverbModeChanged(int mode);

@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2020 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -23,11 +23,37 @@
 
 #include "../MidiPropertiesDialog.h"
 
+#if _WIN32_WINNT < 0x0500
+
+// Private message posted by the MME MIDI driver to inform when MIDI data becomes available.
+#define WM_APP_DRV_HAS_DATA WM_APP + 1
+
+#define RING_BUFFER_SIZE 0x8000
+
+#define BUFFER_END_MARKER 0
+#define BUFFER_WRAP_MARKER 1
+#define SHORT_MESSAGE_MARKER 2
+#define MT32EMU_MAGIC 0x3264
+
+/* The data block format is as follows:
+ * WORD - block length
+ * WORD - synth instance ID
+ * DWORD - millisecond timestamp
+ * data payload:
+ * - either DWORD for short message
+ * - raw data bytes for long message
+ */
+#define DATA_HEADER_LENGTH 8
+#define SHORT_MESSAGE_LENGTH 4
+
+#endif // _WIN32_WINNT < 0x0500
+
 static Win32MidiDriver *driver;
 static HWND hwnd = NULL;
 static MasterClockNanos startMasterClock; // FIXME: Should actually be per-session but doesn't seem to be a real win
 
 LRESULT CALLBACK Win32MidiDriver::midiInProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+//	qDebug() << "Win32MidiDriver: Got:" << "0x" + QString::number(uMsg, 16) << "0x" + QString::number(wParam, 16) << "0x" + QString::number(lParam, 16);
 	switch (uMsg) {
 	case WM_APP: {
 		// Closing session
@@ -42,6 +68,80 @@ LRESULT CALLBACK Win32MidiDriver::midiInProc(HWND hwnd, UINT uMsg, WPARAM wParam
 		driver->deleteMidiSession(midiSession);
 		return 1;
 	}
+
+#if _WIN32_WINNT < 0x0500
+	case WM_APP_DRV_HAS_DATA: {
+		const PBYTE ringBuffer = (PBYTE)lParam;
+		if (*((PWORD)&ringBuffer[RING_BUFFER_SIZE] + 2) != MT32EMU_MAGIC) {
+			qDebug() << "Win32MidiDriver: Magic not matched:" << "0x" + QString::number(*((PWORD)&ringBuffer[RING_BUFFER_SIZE] + 2), 16);
+			return 0;
+		}
+		const PWORD ringBufferStart = (PWORD)&ringBuffer[RING_BUFFER_SIZE];
+//		qDebug() << "Win32MidiDriver: ringBufferStart:" << *ringBufferStart;
+//		qDebug() << "Win32MidiDriver: ringBufferEnd:" << *((PWORD)&ringBuffer[RING_BUFFER_SIZE] + 1);
+		for (;;) {
+			union {
+				PBYTE b;
+				PWORD w;
+				PDWORD d;
+			} p;
+			p.b = &ringBuffer[*ringBufferStart];
+			DWORD dataBlockLength = *p.w++;
+			DWORD longDataLength = 0;
+
+			switch (dataBlockLength) {
+			case BUFFER_END_MARKER:
+//				qDebug() << "Win32MidiDriver: BUFFER_END_MARKER";
+				return 1;
+
+			case BUFFER_WRAP_MARKER:
+				*ringBufferStart = 0;
+//				qDebug() << "Win32MidiDriver: BUFFER_WRAP_MARKER";
+				continue;
+
+			case SHORT_MESSAGE_MARKER:
+				dataBlockLength = DATA_HEADER_LENGTH + SHORT_MESSAGE_LENGTH;
+				break;
+
+			default:
+				if (dataBlockLength <= DATA_HEADER_LENGTH || RING_BUFFER_SIZE < dataBlockLength) {
+					qDebug() << "Win32MidiDriver: Invalid long data block length:" << dataBlockLength;
+					return 0;
+				}
+				longDataLength = dataBlockLength - DATA_HEADER_LENGTH;
+				break;
+			}
+#if 0
+			QString data;
+			for (uint i = 0; i < dataBlockLength - 2; i++) {
+				data += QString::number(p.b[i], 16);
+				data += " ";
+			}
+			qDebug() << "Win32MidiDriver: DATA:" << data;
+#endif
+			const DWORD midiSessionID = *p.w++;
+			MidiSession * const midiSession = driver->findMidiSession(midiSessionID);
+			if (!midiSession) {
+				qDebug() << "Win32MidiDriver: Invalid midiSession ID supplied:" << "0x" + QString::number(midiSessionID, 16);
+				*ringBufferStart += dataBlockLength;
+				continue;
+			}
+			const MasterClockNanos timestamp = *p.d++ * MasterClock::NANOS_PER_MILLISECOND;
+			// Use QMidiStreamParser to extract well-formed MIDI messages from buffer
+			QMidiStreamParser &qMidiStreamParser = *midiSession->getQMidiStreamParser();
+			qMidiStreamParser.setTimestamp(timestamp - startMasterClock);
+			if (longDataLength) {
+//				qDebug() << "Win32MidiDriver: LONG_DATA length:" << longDataLength;
+				qMidiStreamParser.parseStream(p.b, longDataLength);
+			} else {
+//				qDebug() << "Win32MidiDriver: SHORT_MESSAGE:" << "0x" + QString::number(*p.d, 16);
+				qMidiStreamParser.processShortMessage(*p.d);
+			}
+			*ringBufferStart += dataBlockLength;
+		}
+		return 1;
+	}
+#endif // _WIN32_WINNT < 0x0500
 
 	case WM_COPYDATA: {
 		COPYDATASTRUCT *cds = (COPYDATASTRUCT *)lParam;
@@ -61,7 +161,7 @@ LRESULT CALLBACK Win32MidiDriver::midiInProc(HWND hwnd, UINT uMsg, WPARAM wParam
 				}
 				do
 					midiSessionID = (quint32)qrand();
-				while (driver->midiSessionIDs.indexOf(midiSessionID) >= 0);
+				while (midiSessionID == 0 || driver->midiSessionIDs.indexOf(midiSessionID) >= 0);
 				driver->midiSessionIDs.append(midiSessionID);
 				driver->showBalloon("Connected application:", appName);
 				qDebug() << "Win32MidiDriver: Connected application" << appName;
@@ -76,7 +176,7 @@ LRESULT CALLBACK Win32MidiDriver::midiInProc(HWND hwnd, UINT uMsg, WPARAM wParam
 				}
 				LARGE_INTEGER t = { { data[2], (LONG)data[3] } };
 //				qDebug() << "D" << 1e-6 * ((t.QuadPart - startMasterClock) - MasterClock::getClockNanos());
-				midiSession->getSynthRoute()->pushMIDIShortMessage(data[4], t.QuadPart - startMasterClock);
+				midiSession->getSynthRoute()->pushMIDIShortMessage(*midiSession, data[4], t.QuadPart - startMasterClock);
 				return 1;
 			}
 		} else {
@@ -86,10 +186,11 @@ LRESULT CALLBACK Win32MidiDriver::midiInProc(HWND hwnd, UINT uMsg, WPARAM wParam
 				qDebug() << "Win32MidiDriver: Invalid midiSession ID supplied:" << "0x" + QString::number(midiSessionID, 16);
 				return 0;
 			}
-			midiSession->getSynthRoute()->pushMIDISysex((MT32Emu::Bit8u *)cds->lpData, cds->cbData, MasterClock::getClockNanos());
+			midiSession->getSynthRoute()->pushMIDISysex(*midiSession, (MT32Emu::Bit8u *)cds->lpData, cds->cbData, MasterClock::getClockNanos());
 			return 1;
 		}
 	}
+	// Fall-through
 
 	default:
 		return DefWindowProc(hwnd, uMsg, wParam, lParam);
@@ -102,6 +203,7 @@ MidiSession *Win32MidiDriver::findMidiSession(quint32 midiSessionID) {
 }
 
 void Win32MidiInProcessor::run() {
+	qDebug() << "Win32MidiDriver: Win32MidiInProcessor started";
 	HINSTANCE hInstance = GetModuleHandle(NULL);
 	LPCTSTR mt32emuClassName = "mt32emu_class";
 	WNDCLASS wc;
@@ -116,21 +218,43 @@ void Win32MidiInProcessor::run() {
 	wc.lpszMenuName = NULL;
 	wc.lpszClassName = mt32emuClassName;
 	if (!RegisterClass(&wc)) {
-		qDebug() << "Error registering message class";
+		qDebug() << "Win32MidiDriver: Error registering message class";
 	}
 
-#ifndef HWND_MESSAGE
-#define HWND_MESSAGE ((HWND)-3)
+#if _WIN32_WINNT < 0x0500
+#define HWND_MESSAGE NULL
 #endif
 
 	hwnd = CreateWindow(mt32emuClassName, "mt32emu_message_window", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL);
+
+#if _WIN32_WINNT < 0x0500
+#undef HWND_MESSAGE
+#endif
+
 	if (hwnd == NULL) {
 		DWORD err = GetLastError();
-		qDebug() << "Error creating message window " << err << "\n";
+		qDebug() << "Win32MidiDriver: Error creating message window" << err;
 	}
+
+#if _WIN32_WINNT < 0x0500
+	for (;;) {
+		MSG msg;
+		int res = GetMessage(&msg, hwnd, WM_QUIT, WM_APP + 0x3FFF);
+		if (res <= 0) {
+			if (res < 0) {
+				DWORD err = GetLastError();
+				qDebug() << "Win32MidiDriver: Error in GetMessage()" << err;
+			}
+			break;
+		}
+		DispatchMessage(&msg);
+	}
+#else // _WIN32_WINNT < 0x0500
 	MSG msg;
 	GetMessage(&msg, hwnd, WM_QUIT, WM_QUIT);
+#endif // _WIN32_WINNT < 0x0500
 	hwnd = NULL;
+	qDebug() << "Win32MidiDriver: Win32MidiInProcessor stopped";
 }
 
 Win32MidiDriver::Win32MidiDriver(Master *useMaster) : MidiDriver(useMaster) {
@@ -268,7 +392,7 @@ void CALLBACK Win32MidiIn::midiInProc(HMIDIIN hMidiIn, UINT wMsg, DWORD_PTR dwIn
 	if (wMsg == MIM_DATA) {
 		// No need to use QMidiStreamParser for short messages: they are guaranteed to have explicit status byte
 		// if ((dwParam1 & 0xF8) == 0xF8) // No support for System Realtime yet
-		midiSession->getSynthRoute()->pushMIDIShortMessage(dwParam1, MasterClock::getClockNanos());
+		midiSession->getSynthRoute()->pushMIDIShortMessage(*midiSession, dwParam1, MasterClock::getClockNanos());
 	}
 }
 

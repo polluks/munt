@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2019 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -40,22 +40,12 @@ SynthStateMonitor::SynthStateMonitor(Ui::SynthWidget *ui, SynthRoute *useSynthRo
 	midiMessageLED(&COLOR_GRAY, ui->midiMessageFrame)
 {
 	partialCount = useSynthRoute->getPartialCount();
-	partialStates = new PartialState[partialCount];
-	keysOfPlayingNotes = new Bit8u[partialCount];
-	velocitiesOfPlayingNotes = new Bit8u[partialCount];
+	allocatePartialsData();
 
 	lcdWidget.setMinimumSize(254, 40);
 	ui->synthFrameLayout->insertWidget(1, &lcdWidget);
 	midiMessageLED.setMinimumSize(10, 2);
 	ui->midiMessageLayout->addWidget(&midiMessageLED, 0, Qt::AlignHCenter);
-
-	partialStateLED = new LEDWidget*[partialCount];
-	for (unsigned int i = 0; i < partialCount; i++) {
-		partialStateLED[i] = new LEDWidget(&COLOR_GRAY, ui->partialStateGrid->widget());
-		partialStateLED[i]->setMinimumSize(16, 16);
-		partialStateLED[i]->setMaximumSize(16, 16);
-		ui->partialStateGrid->addWidget(partialStateLED[i], i >> 2, i & 3);
-	}
 
 	for (int i = 0; i < 9; i++) {
 		patchNameLabel[i] = new QLabel(ui->polyStateGrid->widget());
@@ -82,11 +72,7 @@ SynthStateMonitor::~SynthStateMonitor() {
 		delete partStateWidget[i];
 		delete patchNameLabel[i];
 	}
-	for (unsigned int i = 0; i < partialCount; i++) delete partialStateLED[i];
-	delete[] partialStateLED;
-	delete[] velocitiesOfPlayingNotes;
-	delete[] keysOfPlayingNotes;
-	delete[] partialStates;
+	freePartialsData();
 }
 
 void SynthStateMonitor::enableMonitor(bool enable) {
@@ -103,8 +89,15 @@ void SynthStateMonitor::handleSynthStateChange(SynthState state) {
 	lcdWidget.reset();
 	midiMessageLED.setColor(&COLOR_GRAY);
 
-	for (unsigned int i = 0; i < partialCount; i++) {
-		partialStateLED[i]->setColor(&partialStateColor[PartialState_INACTIVE]);
+	uint newPartialCount = synthRoute->getPartialCount();
+	if (partialCount == newPartialCount || state != SynthState_OPEN) {
+		for (unsigned int i = 0; i < partialCount; i++) {
+			partialStateLED[i]->setColor(&partialStateColor[PartialState_INACTIVE]);
+		}
+	} else {
+		freePartialsData();
+		partialCount = newPartialCount;
+		allocatePartialsData();
 	}
 
 	for (int i = 0; i < 9; i++) {
@@ -161,6 +154,42 @@ void SynthStateMonitor::handleUpdate() {
 	} else if ((nanosNow - midiMessageLEDStartNanos) > MIDI_MESSAGE_LED_MINIMUM_NANOS) {
 		midiMessageLED.setColor(&COLOR_GRAY);
 	}
+}
+
+void SynthStateMonitor::allocatePartialsData() {
+	partialStates = new PartialState[partialCount];
+	keysOfPlayingNotes = new Bit8u[partialCount];
+	velocitiesOfPlayingNotes = new Bit8u[partialCount];
+
+	partialStateLED = new LEDWidget*[partialCount];
+	unsigned int partialColumnWidth;
+	if (partialCount < 64) {
+		partialColumnWidth = 4;
+	} else if (partialCount < 128) {
+		partialColumnWidth = 8;
+	} else {
+		partialColumnWidth = 16;
+	}
+	for (unsigned int i = 0; i < partialCount; i++) {
+		partialStateLED[i] = new LEDWidget(&COLOR_GRAY, ui->partialStateGrid->widget());
+		partialStateLED[i]->setMinimumSize(16, 16);
+		partialStateLED[i]->setMaximumSize(16, 16);
+		ui->partialStateGrid->addWidget(partialStateLED[i], i / partialColumnWidth, i % partialColumnWidth);
+	}
+}
+
+void SynthStateMonitor::freePartialsData() {
+	if (partialStateLED != NULL) {
+		for (unsigned int i = 0; i < partialCount; i++) delete partialStateLED[i];
+	}
+	delete[] partialStateLED;
+	partialStateLED = NULL;
+	delete[] velocitiesOfPlayingNotes;
+	velocitiesOfPlayingNotes = NULL;
+	delete[] keysOfPlayingNotes;
+	keysOfPlayingNotes = NULL;
+	delete[] partialStates;
+	partialStates = NULL;
 }
 
 LEDWidget::LEDWidget(const QColor *color, QWidget *parent) : QWidget(parent), colorProperty(color) {}
@@ -284,7 +313,7 @@ void LCDWidget::handleMasterVolumeChanged(int volume) {
 
 void LCDWidget::setPartStateLCDText() {
 	lcdState = DISPLAYING_PART_STATE;
-	lcdText = QString().sprintf("1 2 3 4 5 R |vol:%3d", masterVolume).toLocal8Bit();
+	lcdText = QString("1 2 3 4 5 R |vol:%1").arg(masterVolume, 3).toLocal8Bit();
 }
 
 void LCDWidget::setProgramChangeLCDText(int partNum, QString soundGroupName, QString timbreName) {
@@ -292,7 +321,11 @@ void LCDWidget::setProgramChangeLCDText(int partNum, QString soundGroupName, QSt
 	if ((lcdState != DISPLAYING_MESSAGE) || (nanosNow - lcdStateStartNanos > LCD_MESSAGE_DISPLAYING_NANOS)) {
 		lcdState = DISPLAYING_TIMBRE_NAME;
 		lcdStateStartNanos = nanosNow;
-		lcdText = (QString().sprintf("%1i|", partNum) + soundGroupName + timbreName).toLocal8Bit();
+#if (QT_VERSION < QT_VERSION_CHECK(4, 6, 0))
+		lcdText = (QString::number(partNum) + '|' + soundGroupName + timbreName).toLocal8Bit();
+#else
+		lcdText = QString(QString::number(partNum) % '|' % soundGroupName % timbreName).toLocal8Bit();
+#endif
 		update();
 	}
 }

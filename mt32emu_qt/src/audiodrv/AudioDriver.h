@@ -1,7 +1,6 @@
 #ifndef AUDIO_DRIVER_H
 #define AUDIO_DRIVER_H
 
-#include <QObject>
 #include <QtGlobal>
 #include <QList>
 #include <QString>
@@ -12,36 +11,45 @@
 #include "../MasterClock.h"
 
 class AudioDriver;
-class QSynth;
-class ClockSync;
+class SynthRoute;
 struct AudioDriverSettings;
 
 class AudioStream {
 protected:
-	QSynth &synth;
+	SynthRoute &synthRoute;
 	const quint32 sampleRate;
 	const AudioDriverSettings &settings;
 	quint32 audioLatencyFrames;
 	quint32 midiLatencyFrames;
 
-	quint64 renderedFramesCount;
-	ClockSync *clockSync;
+	quint64 lastEstimatedPlayedFramesCount;
+	bool resetScheduled;
 
-	struct {
+	// Note, renderedFramesCount and timeInfo are read from several MIDI receiving threads,
+	// so they need a thread-safe publication tech. The two snapshots are written in turn,
+	// so that while the change count stays intact, it is safe to read the snapshot
+	// with the index equal to the last bit of the change count.
+
+	quint64 renderedFramesCounts[2];
+	QAtomicInt renderedFramesChangeCount;
+
+	struct TimeInfo {
 		MasterClockNanos lastPlayedNanos;
 		quint64 lastPlayedFramesCount;
 		double actualSampleRate;
-	} timeInfo[2];
-	volatile uint timeInfoIx;
+	} timeInfos[2];
+	QAtomicInt timeInfoChangeCount;
 
 	void updateTimeInfo(const MasterClockNanos measuredNanos, const quint32 framesInAudioBuffer);
 	bool isAutoLatencyMode() const;
-	void updateResetPeriod() const;
+	void framesRendered(quint32 frameCount);
+	quint64 getRenderedFramesCount() const;
 
 public:
-	AudioStream(const AudioDriverSettings &settings, QSynth &synth, const quint32 sampleRate);
-	virtual ~AudioStream();
+	AudioStream(const AudioDriverSettings &settings, SynthRoute &synthRoute, const quint32 sampleRate);
+	virtual ~AudioStream() {}
 	virtual quint64 estimateMIDITimestamp(const MasterClockNanos refNanos = 0);
+	quint64 computeMIDITimestamp(uint relativeFrameTime) const;
 };
 
 class AudioDevice {
@@ -50,11 +58,11 @@ public:
 	const QString name;
 
 	AudioDevice(AudioDriver &driver, const QString name);
-	virtual ~AudioDevice() {};
-	virtual AudioStream *startAudioStream(QSynth &synth, const uint sampleRate) const = 0;
+	virtual ~AudioDevice() {}
+	virtual AudioStream *startAudioStream(SynthRoute &synthRoute, const uint sampleRate) const = 0;
 };
 
-Q_DECLARE_METATYPE(const AudioDevice *);
+Q_DECLARE_METATYPE(const AudioDevice *)
 
 struct AudioDriverSettings {
 	// The sample rate to use for instances of AudioStream being created
@@ -68,7 +76,7 @@ struct AudioDriverSettings {
 	// The number of milliseconds by which to delay MIDI events to ensure accurate relative timing
 	unsigned int midiLatency;
 	// true - use advanced timing functions provided by audio API
-	// false - instead, compute average actual sample rate using clockSync
+	// false - instead, rely on count of rendered samples to compute average actual sample rate
 	bool advancedTiming;
 };
 
@@ -90,7 +98,7 @@ public:
 	static void migrateAudioSettingsFromVersion1();
 
 	AudioDriver(QString useID, QString useName);
-	virtual ~AudioDriver() {};
+	virtual ~AudioDriver() {}
 	virtual const QList<const AudioDevice *> createDeviceList() = 0;
 	virtual const AudioDriverSettings &getAudioSettings() const;
 	virtual void setAudioSettings(AudioDriverSettings &useSettings);

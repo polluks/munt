@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2017 Sergey V. Mikayev
+/* Copyright (C) 2011-2019 Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -85,8 +85,23 @@ private:
 	volatile UINT64 prevPlayPosition;
 	volatile bool stopProcessing;
 
+	static UINT findAudioDevice(const char *audioDeviceName) {
+		UINT deviceCount = waveOutGetNumDevs();
+		for (UINT deviceIndex = 0; deviceIndex < deviceCount; deviceIndex++) {
+			WAVEOUTCAPSA deviceInfo;
+			if (waveOutGetDevCapsA(deviceIndex, &deviceInfo, sizeof(deviceInfo)) != MMSYSERR_NOERROR) {
+				MessageBox(NULL, L"Failed to get audio device capabilities", L"MT32", MB_OK | MB_ICONEXCLAMATION);
+				continue;
+			}
+			if (!lstrcmpiA(audioDeviceName, deviceInfo.szPname)) {
+				return deviceIndex;
+			}
+		}
+		return WAVE_MAPPER;
+	}
+
 public:
-	int Init(Bit16s *buffer, unsigned int bufferSize, unsigned int chunkSize, bool useRingBuffer, unsigned int sampleRate) {
+	int Init(Bit16s *buffer, unsigned int bufferSize, unsigned int chunkSize, bool useRingBuffer, unsigned int sampleRate, const char *audioDeviceName) {
 		DWORD callbackType = CALLBACK_NULL;
 		DWORD_PTR callback = (DWORD_PTR)NULL;
 		hEvent = NULL;
@@ -100,7 +115,7 @@ public:
 		PCMWAVEFORMAT wFormat = {WAVE_FORMAT_PCM, 2, sampleRate, sampleRate * 4, 4, 16};
 
 		// Open waveout device
-		int wResult = waveOutOpen(&hWaveOut, WAVE_MAPPER, (LPWAVEFORMATEX)&wFormat, callback, (DWORD_PTR)&midiSynth, callbackType);
+		int wResult = waveOutOpen(&hWaveOut, findAudioDevice(audioDeviceName), (LPWAVEFORMATEX)&wFormat, callback, (DWORD_PTR)&midiSynth, callbackType);
 		if (wResult != MMSYSERR_NOERROR) {
 			MessageBox(NULL, L"Failed to open waveform output device", L"MT32", MB_OK | MB_ICONEXCLAMATION);
 			return 2;
@@ -432,6 +447,7 @@ void MidiSynth::ReloadSettings() {
 	}
 	settingsVersion = LoadIntValue(hRegMaster, "settingsVersion", 1);
 	resetEnabled = !LoadBoolValue(hRegMaster, "startPinnedSynthRoute", false);
+	LoadStringValue(hRegMaster, "defaultAudioDevice", "", audioDeviceName, sizeof(audioDeviceName));
 	char profile[256];
 	LoadStringValue(hRegMaster, "defaultSynthProfile", "default", profile, sizeof(profile));
 	RegCloseKey(hRegMaster);
@@ -471,6 +487,7 @@ void MidiSynth::ReloadSettings() {
 	}
 
 	reversedStereoEnabled = LoadBoolValue(hRegProfile, "reversedStereoEnabled", false);
+	niceAmpRamp = LoadBoolValue(hRegProfile, "niceAmpRamp", true);
 
 	reverbCompatibilityMode = (ReverbCompatibilityMode)LoadIntValue(hRegProfile, "reverbCompatibilityMode", ReverbCompatibilityMode_DEFAULT);
 	emuDACInputMode = (DACInputMode)LoadIntValue(hRegProfile, "emuDACInputMode", DACInputMode_NICE);
@@ -480,6 +497,7 @@ void MidiSynth::ReloadSettings() {
 		analogOutputMode = (AnalogOutputMode)LoadIntValue(hRegProfile, "analogOutputMode", AnalogOutputMode_ACCURATE);
 	}
 	rendererType = (RendererType)LoadIntValue(hRegProfile, "rendererType", RendererType_BIT16S);
+	partialCount = (Bit32u)LoadIntValue(hRegProfile, "partialCount", DEFAULT_MAX_PARTIALS);
 
 	if (!resetEnabled && synth != NULL) return;
 	char romDir[256];
@@ -530,6 +548,7 @@ void MidiSynth::ApplySettings() {
 		synth->setReverbCompatibilityMode(reverbCompatibilityMode == ReverbCompatibilityMode_MT32);
 	}
 	synth->setReversedStereoEnabled(reversedStereoEnabled);
+	synth->setNiceAmpRampEnabled(niceAmpRamp);
 }
 
 int MidiSynth::Init() {
@@ -550,7 +569,7 @@ int MidiSynth::Init() {
 	}
 	synth = new Synth(&reportHandler);
 	synth->selectRendererType(rendererType);
-	if (!synth->open(*controlROM, *pcmROM, analogOutputMode)) {
+	if (!synth->open(*controlROM, *pcmROM, partialCount, analogOutputMode)) {
 		synth->close();
 		MessageBox(NULL, L"Can't open Synth", L"MT32", MB_OK | MB_ICONEXCLAMATION);
 		return 1;
@@ -563,7 +582,7 @@ int MidiSynth::Init() {
 	ApplySettings();
 	FreeROMImages();
 
-	UINT wResult = waveOut.Init(buffer, bufferSize, chunkSize, useRingBuffer, sampleRate);
+	UINT wResult = waveOut.Init(buffer, bufferSize, chunkSize, useRingBuffer, sampleRate, audioDeviceName);
 	if (wResult) return wResult;
 
 	// Start playing stream
@@ -589,7 +608,7 @@ int MidiSynth::Reset() {
 	synthEvent.Wait();
 	synth->close();
 	synth->selectRendererType(rendererType);
-	if (!synth->open(*controlROM, *pcmROM, analogOutputMode)) {
+	if (!synth->open(*controlROM, *pcmROM, partialCount, analogOutputMode)) {
 		synth->close();
 		synthEvent.Release();
 		MessageBox(NULL, L"Can't open Synth", L"MT32", MB_OK | MB_ICONEXCLAMATION);

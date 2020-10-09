@@ -1,5 +1,5 @@
 /* Copyright (C) 2003, 2004, 2005, 2006, 2008, 2009 Dean Beeler, Jerome Fisher
- * Copyright (C) 2011-2017 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
+ * Copyright (C) 2011-2020 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -223,16 +223,27 @@ void TVA::recalcSustain() {
 	const Tables *tables = &Tables::getInstance();
 	int newTarget = calcBasicAmp(tables, partial, system, partialParam, patchTemp, rhythmTemp, biasAmpSubtraction, veloAmpSubtraction, part->getExpression(), partial->getSynth()->controlROMFeatures->quirkRingModulationNoMix);
 	newTarget += partialParam->tva.envLevel[3];
-	// Since we're in TVA_PHASE_SUSTAIN at this point, we know that target has been reached and an interrupt fired, so we can rely on it being the current amp.
+
+	// Although we're in TVA_PHASE_SUSTAIN at this point, we cannot be sure that there is no active ramp at the moment.
+	// In case the channel volume or the expression changes frequently, the previously started ramp may still be in progress.
+	// Real hardware units ignore this possibility and rely on the assumption that the target is the current amp.
+	// This is OK in most situations but when the ramp that is currently in progress needs to change direction
+	// due to a volume/expression update, this leads to a jump in the amp that is audible as an unpleasant click.
+	// To avoid that, we compare the newTarget with the the actual current ramp value and correct the direction if necessary.
 	int targetDelta = newTarget - target;
 
 	// Calculate an increment to get to the new amp value in a short, more or less consistent amount of time
 	Bit8u newIncrement;
-	if (targetDelta >= 0) {
+	bool descending = targetDelta < 0;
+	if (!descending) {
 		newIncrement = tables->envLogarithmicTime[Bit8u(targetDelta)] - 2;
 	} else {
 		newIncrement = (tables->envLogarithmicTime[Bit8u(-targetDelta)] - 2) | 0x80;
 	}
+	if (part->getSynth()->isNiceAmpRampEnabled() && (descending != ampRamp->isBelowCurrent(newTarget))) {
+		newIncrement ^= 0x80;
+	}
+
 	// Configure so that once the transition's complete and nextPhase() is called, we'll just re-enter sustain phase (or decay phase, depending on parameters at the time).
 	startRamp(newTarget, newIncrement, TVA_PHASE_SUSTAIN - 1);
 }

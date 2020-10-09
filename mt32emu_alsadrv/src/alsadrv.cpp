@@ -1,7 +1,7 @@
 /* Copyright (C) 2003 Tristan
  * Copyright (C) 2004, 2005 Tristan, Jerome Fisher
  * Copyright (C) 2008, 2011 Tristan, Jerome Fisher, Jörg Walter
- * Copyright (C) 2013-2017 Tristan, Jerome Fisher, Jörg Walter, Sergey V. Mikayev
+ * Copyright (C) 2013-2019 Tristan, Jerome Fisher, Jörg Walter, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -131,14 +131,14 @@ snd_pcm_hw_params_t *pcm_hwparams;
 // char *pcm_name = "plughw:0,0";
 char *pcm_name = "default";
 
-double gain_multiplier = 1.0d;
+double gain_multiplier = 1.0;
 
 /* midi queue control variables */
 int flush_events = 0;
 
 
 /* template for reverb sysex events */
-char rvsysex[] = {
+MT32Emu::Bit8u rvsysex[] = {
 	0xf0, 0x41, 0x10, 0x16, 0x12, 
 		0x10, 0x00, 0x01, /* system area address */
 		0x00,       /* data */
@@ -1185,19 +1185,19 @@ int process_loop(int rv)
 			rvsysex[7]  = 1;
 			rvsysex[8] = newev.msg;	
 			rvsysex[9] = 128-((rvsysex[5]+rvsysex[6]+rvsysex[7]+rvsysex[8])&127);
-			mt32->playSysex((MT32Emu::Bit8u *)rvsysex, 11);			
+			mt32->playSysex(rvsysex, 11);
 			break;
 		    case EVENT_SET_RVTIME:			
 			rvsysex[7]  = 2;
 			rvsysex[8] = newev.msg;	
 			rvsysex[9] = 128-((rvsysex[5]+rvsysex[6]+rvsysex[7]+rvsysex[8])&127);
-			mt32->playSysex((MT32Emu::Bit8u *)rvsysex, 11);
+			mt32->playSysex(rvsysex, 11);
 			break;
 		    case EVENT_SET_RVLEVEL:			
 			rvsysex[7]  = 3;
 			rvsysex[8] = newev.msg;	
 			rvsysex[9] = 128-((rvsysex[5]+rvsysex[6]+rvsysex[7]+rvsysex[8])&127);
-			mt32->playSysex((MT32Emu::Bit8u *)rvsysex, 11);
+			mt32->playSysex(rvsysex, 11);
 			break;
 		
 		    case EVENT_RESET:

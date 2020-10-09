@@ -1,5 +1,5 @@
 /* Copyright (C) 2003, 2004, 2005, 2006, 2008, 2009 Dean Beeler, Jerome Fisher
- * Copyright (C) 2011-2017 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
+ * Copyright (C) 2011-2020 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -37,7 +37,11 @@
 #endif /* #ifdef mt32emu_EXPORTS */
 #endif /* #ifdef _MSC_VER */
 #else /* #if defined _WIN32 || defined __CYGWIN__ */
+#ifdef __OS2__
+#define MT32EMU_EXPORT_ATTRIBUTE __declspec(dllexport)
+#else /* #ifdef __OS2__ */
 #define MT32EMU_EXPORT_ATTRIBUTE __attribute__ ((visibility("default")))
+#endif /* #ifdef __OS2__ */
 #endif /* #if defined _WIN32 || defined __CYGWIN__ */
 #else /* #ifdef MT32EMU_SHARED */
 #define MT32EMU_EXPORT_ATTRIBUTE

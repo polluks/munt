@@ -1,5 +1,5 @@
 /* Copyright (C) 2003, 2004, 2005, 2006, 2008, 2009 Dean Beeler, Jerome Fisher
- * Copyright (C) 2011-2017 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
+ * Copyright (C) 2011-2020 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -51,13 +51,15 @@ static Bit16u keyToPitchTable[] = {
 	21845, 22187, 22528, 22869
 };
 
+// We want to do processing 4000 times per second. FIXME: This is pretty arbitrary.
+static const int NOMINAL_PROCESS_TIMER_PERIOD_SAMPLES = SAMPLE_RATE / 4000;
+
+// The timer runs at 500kHz. This is how much to increment it after 8 samples passes.
+// We multiply by 8 to get rid of the fraction and deal with just integers.
+static const int PROCESS_TIMER_INCREMENT_x8 = 8 * 500000 / SAMPLE_RATE;
+
 TVP::TVP(const Partial *usePartial) :
 	partial(usePartial), system(&usePartial->getSynth()->mt32ram.system) {
-	// We want to do processing 4000 times per second. FIXME: This is pretty arbitrary.
-	maxCounter = SAMPLE_RATE / 4000;
-	// The timer runs at 500kHz. We only need to bother updating it every maxCounter samples, before we do processing.
-	// This is how much to increment it by every maxCounter samples.
-	processTimerIncrement = 500000 * maxCounter / SAMPLE_RATE;
 }
 
 static Bit16s keyToPitch(unsigned int key) {
@@ -102,12 +104,12 @@ static Bit32u calcBasePitch(const Partial *partial, const TimbreParam::PartialPa
 
 	// MT-32 GEN0 does 16-bit calculations here, allowing an integer overflow.
 	// This quirk is observable playing the patch defined for timbre "HIT BOTTOM" in Larry 3.
+	// Note, the upper bound isn't checked either.
 	if (controlROMFeatures->quirkBasePitchOverflow) {
 		basePitch = basePitch & 0xffff;
 	} else if (basePitch < 0) {
 		basePitch = 0;
-	}
-	if (basePitch > 59392) {
+	} else if (basePitch > 59392) {
 		basePitch = 59392;
 	}
 	return Bit32u(basePitch);
@@ -149,6 +151,7 @@ void TVP::reset(const Part *usePart, const TimbreParam::PartialParam *usePartial
 
 	// FIXME: We're using a per-TVP timer instead of a system-wide one for convenience.
 	timeElapsed = 0;
+	processTimerIncrement = 0;
 
 	basePitch = calcBasePitch(partial, partialParam, patchTemp, key, partial->getSynth()->controlROMFeatures);
 	currentPitchOffset = calcTargetPitchOffsetWithoutLFO(partialParam, 0, velocity);
@@ -177,9 +180,9 @@ Bit32u TVP::getBasePitch() const {
 void TVP::updatePitch() {
 	Bit32s newPitch = basePitch + currentPitchOffset;
 	if (!partial->isPCM() || (partial->getControlROMPCMStruct()->len & 0x01) == 0) { // FIXME: Use !partial->pcmWaveEntry->unaffectedByMasterTune instead
-		// FIXME: masterTune recalculation doesn't really happen here, and there are various bugs not yet emulated
+		// FIXME: There are various bugs not yet emulated
 		// 171 is ~half a semitone.
-		newPitch += ((system->masterTune - 64) * 171) >> 6; // PORTABILITY NOTE: Assumes arithmetic shift.
+		newPitch += partial->getSynth()->getMasterTunePitchDelta();
 	}
 	if ((partialParam->wg.pitchBenderEnabled & 1) != 0) {
 		newPitch += part->getPitchBend();
@@ -192,6 +195,7 @@ void TVP::updatePitch() {
 	} else if (newPitch < 0) {
 		newPitch = 0;
 	}
+	// This check is present in every unit.
 	if (newPitch > 59392) {
 		newPitch = 59392;
 	}
@@ -296,13 +300,19 @@ void TVP::startDecay() {
 }
 
 Bit16u TVP::nextPitch() {
-	// FIXME: Write explanation of counter and time increment
+	// We emulate MCU software timer using these counter and processTimerIncrement variables.
+	// The value of nominalProcessTimerPeriod approximates the period in samples
+	// between subsequent firings of the timer that normally occur.
+	// However, accurate emulation is quite complicated because the timer is not guaranteed to fire in time.
+	// This makes pitch variations on real unit non-deterministic and dependent on various factors.
 	if (counter == 0) {
-		timeElapsed += processTimerIncrement;
-		timeElapsed = timeElapsed & 0x00FFFFFF;
+		timeElapsed = (timeElapsed + processTimerIncrement) & 0x00FFFFFF;
+		// This roughly emulates pitch deviations observed on real units when playing a single partial that uses TVP/LFO.
+		counter = NOMINAL_PROCESS_TIMER_PERIOD_SAMPLES + (rand() & 3);
+		processTimerIncrement = (PROCESS_TIMER_INCREMENT_x8 * counter) >> 3;
 		process();
 	}
-	counter = (counter + 1) % maxCounter;
+	counter--;
 	return pitch;
 }
 

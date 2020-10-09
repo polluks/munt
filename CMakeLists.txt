@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8.12)
 project(munt)
 set(munt_VERSION_MAJOR 2)
-set(munt_VERSION_MINOR 1)
+set(munt_VERSION_MINOR 3)
 set(munt_VERSION_PATCH 0)
 
 option(munt_WITH_MT32EMU_SMF2WAV "Build command line standard MIDI file conversion tool" TRUE)
@@ -20,13 +20,11 @@ if(munt_WITH_MT32EMU_QT)
 endif()
 
 # build a CPack driven installer package
-include(InstallRequiredSystemLibraries)
 set(CPACK_PACKAGE_VERSION_MAJOR "${munt_VERSION_MAJOR}")
 set(CPACK_PACKAGE_VERSION_MINOR "${munt_VERSION_MINOR}")
 set(CPACK_PACKAGE_VERSION_PATCH "${munt_VERSION_PATCH}")
 set(CPACK_PACKAGE_VENDOR "muntemu.org")
 set(CPACK_PACKAGE_CONTACT "sergm@muntemu.org")
-set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/FreeBSD/usr/ports/audio/libmt32emu/pkg-descr")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Software synthesiser emulating pre-GM MIDI devices such as Roland MT-32, CM-32L, CM-64 and LAPC-I")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/mt32emu_qt/COPYING.txt")
 set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.txt")

@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2019 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -96,7 +96,7 @@ void ROMSelectionDialog::refreshROMInfos() {
 	for (QStringListIterator it(dirEntries); it.hasNext();) {
 		QString fileName = it.next();
 		FileStream file;
-		if (!file.open(Master::getROMPathName(synthProfile.romDir, fileName).toUtf8())) continue;
+		if (!file.open(Master::getROMPathName(synthProfile.romDir, fileName).toLocal8Bit())) continue;
 		const ROMInfo *romInfoPtr = ROMInfo::getROMInfo(&file);
 		if (romInfoPtr == NULL) continue;
 		const ROMInfo &romInfo = *romInfoPtr;

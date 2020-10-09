@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2017 Sergey V. Mikayev
+/* Copyright (C) 2011-2019 Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -30,11 +30,13 @@ private:
 	unsigned int settingsVersion;
 	bool useRingBuffer;
 	bool resetEnabled;
+	char audioDeviceName[MAXPNAMELEN];
 
 	DACInputMode emuDACInputMode;
 	MIDIDelayMode midiDelayMode;
 	AnalogOutputMode analogOutputMode;
 	RendererType rendererType;
+	Bit32u partialCount;
 	float outputGain;
 	float reverbOutputGain;
 	bool reverbEnabled;
@@ -44,6 +46,7 @@ private:
 	Bit8u reverbLevel;
 	unsigned int reverbCompatibilityMode;
 	bool reversedStereoEnabled;
+	bool niceAmpRamp;
 	double sampleRateRatio;
 
 	Bit16s *buffer;

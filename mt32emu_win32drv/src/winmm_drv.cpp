@@ -1,5 +1,5 @@
 /* Copyright (C) 2003, 2004, 2005 Dean Beeler, Jerome Fisher
- * Copyright (C) 2011-2017 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
+ * Copyright (C) 2011-2019 Dean Beeler, Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU Lesser General Public License as published by
@@ -126,70 +126,23 @@ STDAPI_(LONG) DriverProc(DWORD dwDriverID, HDRVR hdrvr, WORD wMessage, DWORD dwP
 
 
 HRESULT modGetCaps(PVOID capsPtr, DWORD capsSize) {
-	MIDIOUTCAPSA * myCapsA;
-	MIDIOUTCAPSW * myCapsW;
-	MIDIOUTCAPS2A * myCaps2A;
-	MIDIOUTCAPS2W * myCaps2W;
+	static const TCHAR synthName[] = L"MT-32 Synth Emulator";
+	static MIDIOUTCAPS myCaps = {0};
 
-	CHAR synthName[] = "MT-32 Synth Emulator\0";
-	WCHAR synthNameW[] = L"MT-32 Synth Emulator\0";
-
-	switch (capsSize) {
-	case (sizeof(MIDIOUTCAPSA)):
-		myCapsA = (MIDIOUTCAPSA *)capsPtr;
-		myCapsA->wMid = MM_UNMAPPED;
-		myCapsA->wPid = MM_MPU401_MIDIOUT;
-		memcpy(myCapsA->szPname, synthName, sizeof(synthName));
-		myCapsA->wTechnology = MOD_MIDIPORT;
-		myCapsA->vDriverVersion = 0x0090;
-		myCapsA->wVoices = 0;
-		myCapsA->wNotes = 0;
-		myCapsA->wChannelMask = 0xffff;
-		myCapsA->dwSupport = 0;
-		return MMSYSERR_NOERROR;
-
-	case (sizeof(MIDIOUTCAPSW)):
-		myCapsW = (MIDIOUTCAPSW *)capsPtr;
-		myCapsW->wMid = MM_UNMAPPED;
-		myCapsW->wPid = MM_MPU401_MIDIOUT;
-		memcpy(myCapsW->szPname, synthNameW, sizeof(synthNameW));
-		myCapsW->wTechnology = MOD_MIDIPORT;
-		myCapsW->vDriverVersion = 0x0090;
-		myCapsW->wVoices = 0;
-		myCapsW->wNotes = 0;
-		myCapsW->wChannelMask = 0xffff;
-		myCapsW->dwSupport = 0;
-		return MMSYSERR_NOERROR;
-
-	case (sizeof(MIDIOUTCAPS2A)):
-		myCaps2A = (MIDIOUTCAPS2A *)capsPtr;
-		myCaps2A->wMid = MM_UNMAPPED;
-		myCaps2A->wPid = MM_MPU401_MIDIOUT;
-		memcpy(myCaps2A->szPname, synthName, sizeof(synthName));
-		myCaps2A->wTechnology = MOD_MIDIPORT;
-		myCaps2A->vDriverVersion = 0x0090;
-		myCaps2A->wVoices = 0;
-		myCaps2A->wNotes = 0;
-		myCaps2A->wChannelMask = 0xffff;
-		myCaps2A->dwSupport = 0;
-		return MMSYSERR_NOERROR;
-
-	case (sizeof(MIDIOUTCAPS2W)):
-		myCaps2W = (MIDIOUTCAPS2W *)capsPtr;
-		myCaps2W->wMid = MM_UNMAPPED;
-		myCaps2W->wPid = MM_MPU401_MIDIOUT;
-		memcpy(myCaps2W->szPname, synthNameW, sizeof(synthNameW));
-		myCaps2W->wTechnology = MOD_MIDIPORT;
-		myCaps2W->vDriverVersion = 0x0090;
-		myCaps2W->wVoices = 0;
-		myCaps2W->wNotes = 0;
-		myCaps2W->wChannelMask = 0xffff;
-		myCaps2W->dwSupport = 0;
-		return MMSYSERR_NOERROR;
-
-	default:
-		return MMSYSERR_ERROR;
+	if (!myCaps.wMid) {
+		myCaps.wMid = MM_UNMAPPED;
+		myCaps.wPid = MM_MPU401_MIDIOUT;
+		myCaps.vDriverVersion = 0x0090;
+		memcpy(&myCaps.szPname, synthName, sizeof(synthName));
+		myCaps.wTechnology = MOD_MIDIPORT;
+		myCaps.wVoices = 0;
+		myCaps.wNotes = 0;
+		myCaps.wChannelMask = 0xffff;
+		myCaps.dwSupport = 0;
 	}
+
+	memcpy(capsPtr, &myCaps, min(sizeof(myCaps), capsSize));
+	return MMSYSERR_NOERROR;
 }
 
 void DoCallback(int driverNum, DWORD_PTR clientNum, DWORD msg, DWORD_PTR param1, DWORD_PTR param2) {
@@ -227,9 +180,6 @@ LONG OpenDriver(Driver &driver, UINT uDeviceID, UINT uMsg, DWORD_PTR dwUser, DWO
 }
 
 LONG CloseDriver(Driver &driver, UINT uDeviceID, UINT uMsg, DWORD_PTR dwUser, DWORD_PTR dwParam1, DWORD_PTR dwParam2) {
-	if (!driver.clients[dwUser].allocated) {
-		return MMSYSERR_INVALPARAM;
-	}
 	driver.clients[dwUser].allocated = false;
 	driver.clientCount--;
 	DoCallback(uDeviceID, dwUser, MOM_CLOSE, NULL, NULL);
@@ -246,7 +196,7 @@ protected:
 			midiSynth.PlayMIDI(message);
 		} else {
 			updateNanoCounter();
-			DWORD msg[] = { 0, 0, nanoCounter.LowPart, nanoCounter.HighPart, message }; // 0, short MIDI message indicator, timestamp, data
+			DWORD msg[] = { 0, 0, nanoCounter.LowPart, (DWORD)nanoCounter.HighPart, message }; // 0, short MIDI message indicator, timestamp, data
 			COPYDATASTRUCT cds = { client.synth_instance, sizeof(msg), msg };
 			LRESULT res = SendMessage(hwnd, WM_COPYDATA, NULL, (LPARAM)&cds);
 			if (res != 1) {
@@ -295,27 +245,38 @@ STDAPI_(DWORD) modMessage(DWORD uDeviceID, DWORD uMsg, DWORD_PTR dwUser, DWORD_P
 	Driver &driver = drivers[uDeviceID];
 	switch (uMsg) {
 	case MODM_OPEN: {
-		if (hwnd == NULL) {
-			hwnd = FindWindow(L"mt32emu_class", NULL);
-		}
 		DWORD instance;
-		if (hwnd == NULL) {
-			// Synth application not found
-			if (!synthOpened) {
-				if (midiSynth.Init() != 0) return MMSYSERR_ERROR;
-				synthOpened = true;
+		for (int i = 0; i < 3; i++) {
+			if (i == 2) {
+				// Synth application failed to create a MIDI session, giving up
+				hwnd = NULL;
+			} else if (hwnd == NULL) {
+				hwnd = FindWindow(L"mt32emu_class", NULL);
 			}
-			instance = NULL;
-		} else {
-			if (synthOpened) {
-				midiSynth.Close();
-				synthOpened = false;
+			if (hwnd == NULL) {
+				// Synth application not found or failing
+				if (!synthOpened) {
+					if (midiSynth.Init() != 0) return MMSYSERR_NOTENABLED;
+					synthOpened = true;
+				}
+				instance = 0;
+			} else {
+				if (synthOpened) {
+					midiSynth.Close();
+					synthOpened = false;
+				}
+				updateNanoCounter();
+				DWORD msg[70] = { 0, (DWORD)-1, 1, nanoCounter.LowPart, (DWORD)nanoCounter.HighPart }; // 0, handshake indicator, version, timestamp, .exe filename of calling application
+				GetModuleFileNameA(GetModuleHandle(NULL), (char *)&msg[5], 255);
+				COPYDATASTRUCT cds = { 0, sizeof(msg), msg };
+				instance = (DWORD)SendMessage(hwnd, WM_COPYDATA, NULL, (LPARAM)&cds);
+				if (!instance) {
+					// OK, we might be keeping old handle, try to refresh it first
+					hwnd = NULL;
+					continue;
+				}
 			}
-			updateNanoCounter();
-			DWORD msg[70] = {0, -1, 1, nanoCounter.LowPart, nanoCounter.HighPart}; // 0, handshake indicator, version, timestamp, .exe filename of calling application
-			GetModuleFileNameA(GetModuleHandle(NULL), (char *)&msg[5], 255);
-			COPYDATASTRUCT cds = {0, sizeof(msg), msg};
-			instance = (DWORD)SendMessage(hwnd, WM_COPYDATA, NULL, (LPARAM)&cds);
+			break;
 		}
 		DWORD res = OpenDriver(driver, uDeviceID, uMsg, dwUser, dwParam1, dwParam2);
 		Driver::Client &client = driver.clients[*(LONG *)dwUser];
@@ -326,7 +287,7 @@ STDAPI_(DWORD) modMessage(DWORD uDeviceID, DWORD uMsg, DWORD_PTR dwUser, DWORD_P
 
 	case MODM_CLOSE:
 		if (driver.clients[dwUser].allocated == false) {
-			return MMSYSERR_ERROR;
+			return MMSYSERR_NOTENABLED;
 		}
 		if (hwnd == NULL) {
 			if (synthOpened) midiSynth.Reset();
@@ -336,28 +297,25 @@ STDAPI_(DWORD) modMessage(DWORD uDeviceID, DWORD uMsg, DWORD_PTR dwUser, DWORD_P
 		delete driver.clients[dwUser].midiStreamParser;
 		return CloseDriver(driver, uDeviceID, uMsg, dwUser, dwParam1, dwParam2);
 
-	case MODM_PREPARE:
-		return MMSYSERR_NOTSUPPORTED;
-
-	case MODM_UNPREPARE:
-		return MMSYSERR_NOTSUPPORTED;
+	case MODM_GETNUMDEVS:
+		return 0x1;
 
 	case MODM_GETDEVCAPS:
 		return modGetCaps((PVOID)dwParam1, (DWORD)dwParam2);
 
 	case MODM_DATA: {
 		if (driver.clients[dwUser].allocated == false) {
-			return MMSYSERR_ERROR;
+			return MMSYSERR_NOTENABLED;
 		}
 		driver.clients[dwUser].midiStreamParser->processShortMessage((Bit32u)dwParam1);
 		if ((hwnd == NULL) && (synthOpened == false))
-			return MMSYSERR_ERROR;
+			return MMSYSERR_NOTENABLED;
 		return MMSYSERR_NOERROR;
 	}
 
 	case MODM_LONGDATA: {
 		if (driver.clients[dwUser].allocated == false) {
-			return MMSYSERR_ERROR;
+			return MMSYSERR_NOTENABLED;
 		}
 		MIDIHDR *midiHdr = (MIDIHDR *)dwParam1;
 		if ((midiHdr->dwFlags & MHDR_PREPARED) == 0) {
@@ -365,20 +323,17 @@ STDAPI_(DWORD) modMessage(DWORD uDeviceID, DWORD uMsg, DWORD_PTR dwUser, DWORD_P
 		}
 		driver.clients[dwUser].midiStreamParser->parseStream((const Bit8u *)midiHdr->lpData, midiHdr->dwBufferLength);
 		if ((hwnd == NULL) && (synthOpened == false))
-			return MMSYSERR_ERROR;
+			return MMSYSERR_NOTENABLED;
 		midiHdr->dwFlags |= MHDR_DONE;
 		midiHdr->dwFlags &= ~MHDR_INQUEUE;
 		DoCallback(uDeviceID, dwUser, MOM_DONE, dwParam1, NULL);
  		return MMSYSERR_NOERROR;
 	}
 
-	case MODM_GETNUMDEVS:
-		return 0x1;
-
 	default:
-		return MMSYSERR_NOERROR;
 		break;
 	}
+	return MMSYSERR_NOTSUPPORTED;
 }
 
 } // namespace

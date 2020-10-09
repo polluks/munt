@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2017 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2019 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -89,7 +89,7 @@ bool MidiParser::parseTrack(QMidiEventList &midiEventList) {
 					// It's a SysEx event
 					runningStatus = 0; // SysEx clears running status
 					sysexBuffer.clear();
-					sysexBuffer += status;
+					sysexBuffer.append(status);
 					quint32 sysexLength = parseVarLenInt(++data);
 					if (sysexLength < 1) {
 						// No SysEx data, keep the time in sync

@@ -1,9 +1,66 @@
-1.6-current:
+HEAD:
+
+	* Added mode "Hide to tray on close". When enabled, the application does not exit when the user closes the main window.
+	  To exit the application, the corresponding menu items can be used in menu "Tools" and the tray icon menu.
+	* Added possibility to select output device on macOS with the CoreAudio driver.
+	* Reworked internal MIDI message routing and buffering in case multiple MIDI streams are attached to a single (pinned)
+	  synth, so that the resulting stream supplied to the synth contains MIDI messages ordered by their timestamp frame-wise.
+	  This improves the timing accuracy to the best possible extent.
+	* Added support for integration with the JACK audio kit. Now the application may serve as one or more JACK clients
+	  providing either a single MIDI input port, a pair of output audio ports, or a combined synth client with the input
+	  and output ports. In the latter case, MIDI processing and audio rendering are performed synchronously without any
+	  explicit additional latency.
+
+2017-12-25:
+
+	1.7.1 released.
+
+	* Improved layout of partial state LEDs when maximum number of partials is set bigger than 63.
+	* Fixed partial state LED widgets being not updated upon a change of Max Partials option.
+	  This may also have resulted in crashes.
+
+2017-12-25:
+
+	1.7.0 released.
+
+	* Replaced application icon for mt32emu-qt with a new nicer one.
+	* Fixed a few minor bugs in MIDI player dialog.
+	* Fixed various issues with accessing files with localised pathnames.
+	* Improved timing accuracy of realtime rendering.
+	* Added experimental support for Windows 9x platform. As a side effect, Qt version 4.5.3 is now supported.
+	* Added new option "Max Partials" in synth configuration. It allows setting the maximum number of partials
+	  playing simultaneously.
+
+2017-07-29:
+
+	1.6.0 released.
 
 	* Improved a bit the LCD emulation to better match behaviour of old MT-32 units.
 	* Improved synth profile handling. When a non-default synth profile is selected in the synth properties dialog,
 	  it is now used during synth re-opening (provided that it is pinned or an active MIDI session persists).
 	* Added support for SysEx fragments in standard MIDI files played using the internal MIDI player.
+	* Added option "Nice Amp Ramp" in the Synth Properties dialog.
+	* Improved "Standard MIDI file converter" dialog:
+	  - PCM targets are now automatically named, the path names are based on the most recent directory specified;
+	  - added possibility to quickly configure a group of MIDI files to convert to a PCM per file (with an accompanying SysEx);
+	  - added "Edit PCM" button to allow renaming the currently selected PCM target;
+	  - added "Add init to all" button that allows to quickly prepend a group of MIDI files with an initialisation SysEx/MIDI.
+	  - Improved Drag & Drop handling:
+	    - directory drops are now supported;
+	    - drops outside the "Source MIDI files" list now create a group;
+	    - when directories are dropped, SysEx files precede the rest within each directory;
+	    - drops inside the "Source MIDI files" list are position-aware.
+	* Improved "MIDI Player" dialog:
+	  - dialog title now shows the name of the currently playing file or when playback is stopped, the file scheduled
+	    for playing;
+	  - clicking the "Play" button now ignores the currently selected item in the playlist,
+	    instead, the file scheduled for playing is considered;
+	  - pressing Enter or double-clicking (depends on platform) an item in the playlist still starts playback with this item;
+	  - currently playing item now persists after most of playlist edits, except when it is removed from the list.
+	    In this case, playback finishes after that item.
+	  - Improved Drag & Drop handling:
+	    - when directories are dropped, SysEx files precede the rest within each directory;
+	    - drops inside the playlist are now position-aware.
 
 2017-04-09:
 
