@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2020 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2021 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -150,9 +150,7 @@ void WinMMAudioProcessor::run() {
 			}
 		}
 		DWORD framesInAudioBuffer = playCursor < renderPos ? renderPos - playCursor : (renderPos + stream.audioLatencyFrames) - playCursor;
-		stream.updateTimeInfo(nanosNow, framesInAudioBuffer);
-		stream.synthRoute.render(buf, frameCount);
-		stream.framesRendered(frameCount);
+		stream.renderAndUpdateState(buf, frameCount, nanosNow, framesInAudioBuffer);
 		if (!stream.ringBufferMode && waveOutWrite(stream.hWaveOut, waveHdr, sizeof(WAVEHDR)) != MMSYSERR_NOERROR) {
 			qDebug() << "WinMMAudioDriver: waveOutWrite failed, thread stopped";
 			stream.stopProcessing = true;

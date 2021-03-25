@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2020 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2021 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@ using namespace MT32Emu;
 
 MidiSession::MidiSession(QObject *parent, MidiDriver *useMidiDriver, QString useName, SynthRoute *useSynthRoute) :
 	QObject(parent), midiDriver(useMidiDriver), name(useName), synthRoute(useSynthRoute),
-	qMidiStreamParser(), qMidiBuffer()
+	qMidiStreamParser(), qMidiBuffer(), midiTrackRecorder()
 {}
 
 MidiSession::~MidiSession() {
@@ -41,6 +41,16 @@ QMidiBuffer *MidiSession::getQMidiBuffer() {
 		qMidiBuffer = new QMidiBuffer;
 	}
 	return qMidiBuffer;
+}
+
+MidiTrackRecorder * MidiSession::getMidiTrackRecorder() {
+	return midiTrackRecorder;
+}
+
+MidiTrackRecorder *MidiSession::setMidiTrackRecorder(MidiTrackRecorder *useMidiTrackRecorder) {
+	MidiTrackRecorder *oldRecorder = midiTrackRecorder;
+	midiTrackRecorder = useMidiTrackRecorder;
+	return oldRecorder;
 }
 
 SynthRoute *MidiSession::getSynthRoute() const {

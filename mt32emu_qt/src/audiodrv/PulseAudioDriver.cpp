@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2020 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2021 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -151,8 +151,7 @@ void *PulseAudioStream::processingThread(void *userData) {
 		} else {
 			framesInAudioBuffer = 0;
 		}
-		audioStream.updateTimeInfo(nanosNow, framesInAudioBuffer);
-		audioStream.synthRoute.render(audioStream.buffer, audioStream.bufferSize);
+		audioStream.renderAndUpdateState(audioStream.buffer, audioStream.bufferSize, nanosNow, framesInAudioBuffer);
 		if (_pa_simple_write(audioStream.stream, audioStream.buffer, audioStream.bufferSize * FRAME_SIZE, &error) < 0) {
 			qDebug() << "pa_simple_write() failed:" << _pa_strerror(error);
 			_pa_simple_free(audioStream.stream);
@@ -162,7 +161,6 @@ void *PulseAudioStream::processingThread(void *userData) {
 			audioStream.processingThreadID = 0;
 			return NULL;
 		}
-		audioStream.framesRendered(audioStream.bufferSize);
 	}
 	audioStream.stopProcessing = false;
 	audioStream.processingThreadID = 0;
@@ -209,7 +207,7 @@ bool PulseAudioStream::start() {
 	while (initFrames > 0) {
 		if (_pa_simple_write(stream, buffer, FRAME_SIZE * bufferSize, &error) < 0) {
 			qDebug() << "pa_simple_write() failed:" << _pa_strerror(error);
-			_pa_simple_free(stream); 
+			_pa_simple_free(stream);
 			stream = NULL;
 			return false;
 		}
@@ -240,7 +238,7 @@ void PulseAudioStream::close() {
 		if (_pa_simple_drain(stream, &error) < 0) {
 			qDebug() << "pa_simple_drain() failed:" << _pa_strerror(error);
 		}
-		_pa_simple_free(stream); 
+		_pa_simple_free(stream);
 		stream = NULL;
 	}
 	return;

@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2019 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2021 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -25,6 +25,11 @@
 
 static void updateMidiAddActionEnabled(Ui::SynthWidget *ui) {
 	ui->midiAdd->setEnabled(ui->pinCheckBox->isEnabled() && Master::getInstance()->canCreateMidiPort());
+}
+
+static bool isAudioRecordingSupported(Ui::SynthWidget *ui) {
+	const AudioDevice *currentAudioDevice = ui->audioDeviceComboBox->itemData(ui->audioDeviceComboBox->currentIndex()).value<const AudioDevice *>();
+	return currentAudioDevice != NULL && currentAudioDevice->driver.id != "jackaudio";
 }
 
 SynthWidget::SynthWidget(Master *master, SynthRoute *useSynthRoute, bool pinnable, const AudioDevice *useAudioDevice, QWidget *parent) :
@@ -109,6 +114,7 @@ void SynthWidget::handleSynthRouteState(SynthRouteState SynthRouteState) {
 		ui->audioDeviceComboBox->setEnabled(false);
 		ui->refreshButton->setEnabled(false);
 		ui->audioPropertiesButton->setEnabled(false);
+		ui->audioRecord->setEnabled(isAudioRecordingSupported(ui));
 		ui->statusLabel->setText("Open");
 		break;
 	case SynthRouteState_OPENING:
@@ -117,6 +123,8 @@ void SynthWidget::handleSynthRouteState(SynthRouteState SynthRouteState) {
 		ui->audioDeviceComboBox->setEnabled(false);
 		ui->refreshButton->setEnabled(false);
 		ui->audioPropertiesButton->setEnabled(false);
+		ui->audioRecord->setEnabled(false);
+		ui->midiRecord->setDisabled(synthRoute->isExclusiveMidiModeEnabled());
 		ui->statusLabel->setText("Opening");
 		break;
 	case SynthRouteState_CLOSING:
@@ -125,6 +133,8 @@ void SynthWidget::handleSynthRouteState(SynthRouteState SynthRouteState) {
 		ui->audioDeviceComboBox->setEnabled(false);
 		ui->refreshButton->setEnabled(false);
 		ui->audioPropertiesButton->setEnabled(false);
+		ui->audioRecord->setEnabled(false);
+		if (synthRoute->isRecordingAudio()) on_audioRecord_clicked();
 		ui->statusLabel->setText("Closing");
 		break;
 	case SynthRouteState_CLOSED:
@@ -133,6 +143,7 @@ void SynthWidget::handleSynthRouteState(SynthRouteState SynthRouteState) {
 		ui->audioDeviceComboBox->setEnabled(true);
 		ui->refreshButton->setEnabled(true);
 		ui->audioPropertiesButton->setEnabled(true);
+		ui->audioRecord->setEnabled(false);
 		ui->statusLabel->setText("Closed");
 		break;
 	}
@@ -234,19 +245,18 @@ void SynthWidget::on_midiProperties_clicked() {
 }
 
 void SynthWidget::on_midiRecord_clicked() {
-	MidiRecorder &recorder = *synthRoute->getMidiRecorder();
-	if (recorder.isRecording()) {
+	if (synthRoute->isRecordingMidi()) {
+		bool isMidiDataRecorded = synthRoute->stopRecordingMidi();
 		ui->midiRecord->setText("Record");
-		recorder.stopRecording();
-		static QString currentDir = NULL;
-		QString fileName = QFileDialog::getSaveFileName(this, NULL, currentDir, "Standard MIDI files (*.mid)");
-		if (!fileName.isEmpty()) {
-			currentDir = QDir(fileName).absolutePath();
-			recorder.saveSMF(fileName, MasterClock::NANOS_PER_MILLISECOND);
+		if (isMidiDataRecorded) {
+			static QString currentDir = NULL;
+			QString fileName = QFileDialog::getSaveFileName(this, NULL, currentDir, "Standard MIDI files (*.mid)");
+			if (!fileName.isEmpty()) currentDir = QDir(fileName).absolutePath();
+			synthRoute->saveRecordedMidi(fileName, MasterClock::NANOS_PER_MILLISECOND);
 		}
 	} else {
 		ui->midiRecord->setText("Stop");
-		recorder.startRecording();
+		synthRoute->startRecordingMidi();
 	}
 }
 

@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2020 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2021 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -17,8 +17,9 @@
 #include <QFileDialog>
 
 #include "AudioFileWriterDriver.h"
-#include "../QSynth.h"
+
 #include "../MasterClock.h"
+#include "../SynthRoute.h"
 
 static const unsigned int DEFAULT_AUDIO_LATENCY = 150;
 static const unsigned int DEFAULT_MIDI_LATENCY = 200;
@@ -32,16 +33,22 @@ bool AudioFileWriterStream::start() {
 	if (fileName.isEmpty()) return false;
 	currentDir = QDir(fileName).absolutePath();
 	timeInfos[0].lastPlayedNanos = MasterClock::getClockNanos();
-	writer.startRealtimeProcessing(&synthRoute, sampleRate, fileName, audioLatencyFrames);
+	writer.startRealtimeProcessing(this, sampleRate, fileName, audioLatencyFrames);
 	return true;
 }
 
-void AudioFileWriterStream::close() {
-	writer.stop();
+void AudioFileWriterStream::audioStreamFailed() {
+	synthRoute.audioStreamFailed();
 }
 
-quint64 AudioFileWriterStream::estimateMIDITimestamp(const MasterClockNanos refNanos) {
-	MasterClockNanos midiNanos = (refNanos == 0) ? MasterClock::getClockNanos() : refNanos;
+void AudioFileWriterStream::render(qint16 *buffer, uint frameCount) {
+	// No need to update time info, we assume perfect timing.
+	synthRoute.render(buffer, frameCount);
+	framesRendered(frameCount);
+}
+
+quint64 AudioFileWriterStream::estimateMIDITimestamp(const MasterClockNanos midiNanos) {
+	// We assume perfect timing with constant sample rate.
 	return quint64(((midiNanos - timeInfos[0].lastPlayedNanos) * sampleRate) / MasterClock::NANOS_PER_SECOND) + midiLatencyFrames;
 }
 

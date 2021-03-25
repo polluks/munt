@@ -1,7 +1,6 @@
 #ifndef SYNTH_ROUTE_H
 #define SYNTH_ROUTE_H
 
-#include <ctime>
 #include <QtCore>
 #include <mt32emu/mt32emu.h>
 
@@ -29,12 +28,15 @@ private:
 	QSynth qSynth;
 	QList<MidiSession *> midiSessions;
 	QMutex midiSessionsMutex;
-	MidiRecorder recorder;
+	MidiRecorder midiRecorder;
 	bool exclusiveMidiMode;
 	volatile bool multiMidiMode;
 
 	const AudioDevice *audioDevice;
-	AudioStream *audioStream; // NULL until a stream is created
+	// Points to the currently active AudioStream, NULL if there are none.
+	AudioStream *audioStream;
+	// Protects read accesses to audioStream against concurrent deletions.
+	QReadWriteLock audioStreamLock;
 
 	quint64 debugLastEventTimestamp;
 	qint64 debugDeltaLowerLimit, debugDeltaUpperLimit;
@@ -42,6 +44,7 @@ private:
 	void setState(SynthRouteState newState);
 	void disableExclusiveMidiMode();
 	void mergeMidiStreams(uint renderingPassFrameLength);
+	void deleteAudioStream();
 
 public:
 	SynthRoute(QObject *parent = NULL);
@@ -80,6 +83,8 @@ public:
 	void setReverbSettings(int reverbMode, int reverbTime, int reverbLevel);
 	void setReversedStereoEnabled(bool enabled);
 	void setNiceAmpRampEnabled(bool enabled);
+	void setNicePanningEnabled(bool enabled);
+	void setNicePartialMixingEnabled(bool enabled);
 	void resetMIDIChannelsAssignment(bool engageChannel1);
 	void setInitialMIDIChannelsAssignment(bool engageChannel1);
 	void setReverbCompatibilityMode(ReverbCompatibilityMode reverbCompatibilityMode);
@@ -93,13 +98,17 @@ public:
 	void stopRecordingAudio();
 	bool isRecordingAudio() const;
 
+	void startRecordingMidi();
+	bool stopRecordingMidi();
+	bool isRecordingMidi() const;
+	void saveRecordedMidi(const QString &fileName, MasterClockNanos midiTick);
+
 	void addMidiSession(MidiSession *midiSession);
 	void removeMidiSession(MidiSession *midiSession);
 	void setMidiSessionName(MidiSession *midiSession, QString name);
 	bool hasMIDISessions() const;
 	SynthRouteState getState() const;
 	void setAudioDevice(const AudioDevice *newAudioDevice);
-	MidiRecorder *getMidiRecorder();
 	void getSynthProfile(SynthProfile &synthProfile) const;
 	void setSynthProfile(const SynthProfile &synthProfile, QString useSynthProfileName);
 	void getROMImages(const MT32Emu::ROMImage *&controlROMImage, const MT32Emu::ROMImage *&pcmROMImage) const;

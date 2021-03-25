@@ -40,6 +40,8 @@ struct SynthProfile {
 	bool reversedStereoEnabled;
 	bool engageChannel1OnOpen;
 	bool niceAmpRamp;
+	bool nicePanning;
+	bool nicePartialMixing;
 };
 
 class QReportHandler : public QObject, public MT32Emu::ReportHandler {
@@ -156,6 +158,8 @@ public:
 	void setReverbSettings(int reverbMode, int reverbTime, int reverbLevel);
 	void setReversedStereoEnabled(bool enabled);
 	void setNiceAmpRampEnabled(bool enabled);
+	void setNicePanningEnabled(bool enabled);
+	void setNicePartialMixingEnabled(bool enabled);
 	void resetMIDIChannelsAssignment(bool engageChannel1);
 	void setInitialMIDIChannelsAssignment(bool engageChannel1);
 	void setReverbCompatibilityMode(ReverbCompatibilityMode reverbCompatibilityMode);
@@ -167,7 +171,7 @@ public:
 	const QString getPatchName(int partNum) const;
 	void getPartStates(bool *partStates) const;
 	void getPartialStates(MT32Emu::PartialState *partialStates) const;
-	uint getPlayingNotes(unsigned int partNumber, MT32Emu::Bit8u *keys, MT32Emu::Bit8u *velocities) const;
+	uint getPlayingNotes(uint partNumber, MT32Emu::Bit8u *keys, MT32Emu::Bit8u *velocities) const;
 	uint getPartialCount() const;
 	uint getSynthSampleRate() const;
 	bool isActive() const;

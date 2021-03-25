@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2020 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2021 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -24,11 +24,12 @@
  * - Merging MIDI streams coming from several MIDI sessions
  */
 
-#include <climits>
+#include <limits>
 
 #include "SynthRoute.h"
 #include "MidiSession.h"
 #include "QMidiBuffer.h"
+#include "RealtimeReadLocker.h"
 #include "audiodrv/AudioDriver.h"
 
 using namespace MT32Emu;
@@ -47,7 +48,7 @@ SynthRoute::SynthRoute(QObject *parent) :
 }
 
 SynthRoute::~SynthRoute() {
-	delete audioStream;
+	deleteAudioStream();
 }
 
 void SynthRoute::setAudioDevice(const AudioDevice *newAudioDevice) {
@@ -83,13 +84,13 @@ bool SynthRoute::open(AudioStreamFactory audioStreamFactory) {
 			debugDeltaUpperLimit = qint64(ceil(debugDeltaMean + debugDeltaLimit));
 			qDebug() << "Using sample rate:" << sampleRate;
 
-			if (exclusiveMidiMode && audioStreamFactory != NULL) {
-				audioStream = audioStreamFactory(audioDevice, *this, sampleRate, midiSessions.first());
-			} else {
-				audioStream = audioDevice->startAudioStream(*this, sampleRate);
-			}
-			if (audioStream != NULL) {
+			AudioStream *newAudioStream = exclusiveMidiMode && audioStreamFactory != NULL
+				? audioStreamFactory(audioDevice, *this, sampleRate, midiSessions.first())
+				: audioDevice->startAudioStream(*this, sampleRate);
+			if (newAudioStream != NULL) {
 				setState(SynthRouteState_OPEN);
+				QWriteLocker audioStreamLocker(&audioStreamLock);
+				audioStream = newAudioStream;
 				return true;
 			} else {
 				qDebug() << "Failed to start audioStream";
@@ -116,8 +117,7 @@ bool SynthRoute::close() {
 		break;
 	}
 	setState(SynthRouteState_CLOSING);
-	delete audioStream;
-	audioStream = NULL;
+	deleteAudioStream();
 	qSynth.close();
 	disableExclusiveMidiMode();
 	discardMidiBuffers();
@@ -161,6 +161,7 @@ void SynthRoute::addMidiSession(MidiSession *midiSession) {
 	if (hasMIDISessions() && !multiMidiMode) enableMultiMidiMode();
 	QMutexLocker midiSessionsLocker(&midiSessionsMutex);
 	midiSessions.append(midiSession);
+	if (midiRecorder.isRecording()) midiSession->setMidiTrackRecorder(midiRecorder.addTrack());
 	emit midiSessionAdded(midiSession);
 }
 
@@ -200,16 +201,11 @@ void SynthRoute::handleQSynthState(SynthState synthState) {
 		setState(SynthRouteState_CLOSING);
 		break;
 	case SynthState_CLOSED:
-		delete audioStream;
-		audioStream = NULL;
+		deleteAudioStream();
 		setState(SynthRouteState_CLOSED);
 		disableExclusiveMidiMode();
 		break;
 	}
-}
-
-MidiRecorder *SynthRoute::getMidiRecorder() {
-	return &recorder;
 }
 
 bool SynthRoute::connectSynth(const char *signal, const QObject *receiver, const char *slot) const {
@@ -221,14 +217,17 @@ bool SynthRoute::connectReportHandler(const char *signal, const QObject *receive
 }
 
 bool SynthRoute::pushMIDIShortMessage(MidiSession &midiSession, Bit32u msg, MasterClockNanos refNanos) {
-	recorder.recordShortMessage(msg, refNanos);
-	AudioStream *stream = audioStream;
-	if (stream == NULL) return false;
-	quint64 timestamp = stream->estimateMIDITimestamp(refNanos);
+	if (midiRecorder.isRecording()) midiSession.getMidiTrackRecorder()->recordShortMessage(msg, refNanos);
+	quint64 timestamp;
+	{
+		RealtimeReadLocker audioStreamLocker(audioStreamLock);
+		if (!audioStreamLocker.isLocked() || audioStream == NULL) return false;
+		timestamp = audioStream->estimateMIDITimestamp(refNanos);
+	}
 	if (msg == 0) {
 		// This is a special event sent by the test driver
-		qint64 delta = qint64(timestamp - debugLastEventTimestamp);
-		MasterClockNanos debugEventNanoOffset = (refNanos == 0) ? 0 : MasterClock::getClockNanos() - refNanos;
+		qint64 delta = qint64(timestamp) - qint64(debugLastEventTimestamp);
+		MasterClockNanos debugEventNanoOffset = MasterClock::getClockNanos() - refNanos;
 		if ((delta < debugDeltaLowerLimit) || (debugDeltaUpperLimit < delta) || ((15 * MasterClock::NANOS_PER_MILLISECOND) < debugEventNanoOffset)) {
 			qDebug() << "M" << delta << timestamp << 1e-6 * debugEventNanoOffset;
 		}
@@ -239,10 +238,13 @@ bool SynthRoute::pushMIDIShortMessage(MidiSession &midiSession, Bit32u msg, Mast
 }
 
 bool SynthRoute::pushMIDISysex(MidiSession &midiSession, const Bit8u *sysexData, unsigned int sysexLen, MasterClockNanos refNanos) {
-	recorder.recordSysex(sysexData, sysexLen, refNanos);
-	AudioStream *stream = audioStream;
-	if (stream == NULL) return false;
-	quint64 timestamp = stream->estimateMIDITimestamp(refNanos);
+	if (midiRecorder.isRecording()) midiSession.getMidiTrackRecorder()->recordSysex(sysexData, sysexLen, refNanos);
+	quint64 timestamp;
+	{
+		RealtimeReadLocker audioStreamLocker(audioStreamLock);
+		if (!audioStreamLocker.isLocked() || audioStream == NULL) return false;
+		timestamp = audioStream->estimateMIDITimestamp(refNanos);
+	}
 	return playMIDISysex(midiSession, sysexData, sysexLen, timestamp);
 }
 
@@ -294,12 +296,20 @@ void SynthRoute::flushMIDIQueue() {
 
 // When renderingPassFrameLength == 0, all pending messages are merged.
 void SynthRoute::mergeMidiStreams(uint renderingPassFrameLength) {
+	quint64 renderingPassEndTimestamp;
+	{
+		if (renderingPassFrameLength > 0) {
+			RealtimeReadLocker audioStreamLocker(audioStreamLock);
+			// Occasionally, audioStream may appear NULL during startup.
+			if (!audioStreamLocker.isLocked() || audioStream == NULL) return;
+			renderingPassEndTimestamp = audioStream->computeMIDITimestamp(renderingPassFrameLength);
+		} else {
+			renderingPassEndTimestamp = std::numeric_limits<quint64>::max();
+		}
+	}
+
 	QMutexLocker midiSessionsLocker(&midiSessionsMutex);
 	QVarLengthArray<QMidiBuffer *, 16> streamBuffers;
-	const quint64 renderingPassEndTimestamp = renderingPassFrameLength == 0
-		? std::numeric_limits<quint64>::max()
-		: audioStream->computeMIDITimestamp(renderingPassFrameLength);
-
 	for (int i = 0; i < midiSessions.size(); i++) {
 		QMidiBuffer *midiBuffer = midiSessions[i]->getQMidiBuffer();
 		if (midiBuffer->retieveEvents() && midiBuffer->getEventTimestamp() < renderingPassEndTimestamp) {
@@ -341,15 +351,19 @@ void SynthRoute::mergeMidiStreams(uint renderingPassFrameLength) {
 	}
 }
 
+void SynthRoute::deleteAudioStream() {
+	QWriteLocker audioStreamLocker(&audioStreamLock);
+	delete audioStream;
+	audioStream = NULL;
+}
+
 void SynthRoute::render(MT32Emu::Bit16s *buffer, uint length) {
-	// Occasionally, audioStream may appear NULL during startup.
-	if (multiMidiMode && audioStream != NULL) mergeMidiStreams(length);
+	if (multiMidiMode) mergeMidiStreams(length);
 	qSynth.render(buffer, length);
 }
 
 void SynthRoute::render(float *buffer, uint length) {
-	// Occasionally, audioStream may appear NULL during startup.
-	if (multiMidiMode && audioStream != NULL) mergeMidiStreams(length);
+	if (multiMidiMode) mergeMidiStreams(length);
 	qSynth.render(buffer, length);
 }
 
@@ -405,6 +419,14 @@ void SynthRoute::setReversedStereoEnabled(bool enabled) {
 
 void SynthRoute::setNiceAmpRampEnabled(bool enabled) {
 	qSynth.setNiceAmpRampEnabled(enabled);
+}
+
+void SynthRoute::setNicePanningEnabled(bool enabled) {
+	qSynth.setNicePanningEnabled(enabled);
+}
+
+void SynthRoute::setNicePartialMixingEnabled(bool enabled) {
+	qSynth.setNicePartialMixingEnabled(enabled);
 }
 
 void SynthRoute::resetMIDIChannelsAssignment(bool engageChannel1) {
@@ -481,4 +503,28 @@ void SynthRoute::stopRecordingAudio() {
 
 bool SynthRoute::isRecordingAudio() const {
 	return qSynth.isRecordingAudio();
+}
+
+void SynthRoute::startRecordingMidi() {
+	for (int i = 0; i < midiSessions.size(); i++) {
+		midiSessions.at(i)->setMidiTrackRecorder(midiRecorder.addTrack());
+	}
+	midiRecorder.startRecording();
+}
+
+bool SynthRoute::stopRecordingMidi() {
+	return midiRecorder.stopRecording();
+}
+
+void SynthRoute::saveRecordedMidi(const QString &fileName, MasterClockNanos midiTick) {
+	if (!midiRecorder.saveSMF(fileName, midiTick)) {
+		qWarning() << "SynthRoute: Failed to write recorded MIDI data to file" << fileName;
+	}
+	for (int i = 0; i < midiSessions.size(); i++) {
+		midiSessions.at(i)->setMidiTrackRecorder(NULL);
+	}
+}
+
+bool SynthRoute::isRecordingMidi() const {
+	return midiRecorder.isRecording();
 }

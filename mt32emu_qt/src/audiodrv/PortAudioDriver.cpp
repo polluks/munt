@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2020 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2021 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -134,10 +134,8 @@ int PortAudioStream::paCallback(const void *inputBuffer, void *outputBuffer, uns
 	} else {
 		framesInAudioBuffer = 0;
 	}
-	stream->updateTimeInfo(nanosNow, framesInAudioBuffer);
+	stream->renderAndUpdateState((Bit16s *)outputBuffer, quint32(frameCount), nanosNow, framesInAudioBuffer);
 
-	stream->synthRoute.render((Bit16s *)outputBuffer, frameCount);
-	stream->framesRendered(quint32(frameCount));
 	return paContinue;
 }
 

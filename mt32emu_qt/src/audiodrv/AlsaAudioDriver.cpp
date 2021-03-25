@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2020 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2021 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -59,8 +59,7 @@ void *AlsaAudioStream::processingThread(void *userData) {
 				framesInAudioBuffer = (quint32)delayp;
 			}
 		}
-		audioStream.updateTimeInfo(nanosNow, framesInAudioBuffer);
-		audioStream.synthRoute.render(audioStream.buffer, audioStream.bufferSize);
+		audioStream.renderAndUpdateState(audioStream.buffer, audioStream.bufferSize, nanosNow, framesInAudioBuffer);
 		error = snd_pcm_writei(audioStream.stream, audioStream.buffer, audioStream.bufferSize);
 		if (error < 0) {
 			qDebug() << "snd_pcm_writei failed:" << snd_strerror(error) << "-> recovering...";
@@ -75,7 +74,6 @@ void *AlsaAudioStream::processingThread(void *userData) {
 //			isErrorOccured = true;
 //			break;
 		}
-		audioStream.framesRendered(audioStream.bufferSize);
 	}
 	if (isErrorOccured) {
 		snd_pcm_close(audioStream.stream);

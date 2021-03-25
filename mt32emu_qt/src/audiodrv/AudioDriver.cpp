@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2020 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2021 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -58,8 +58,7 @@ AudioStream::AudioStream(const AudioDriverSettings &useSettings, SynthRoute &use
 }
 
 // Intended to be called from MIDI receiving threads.
-quint64 AudioStream::estimateMIDITimestamp(const MasterClockNanos refNanos) {
-	MasterClockNanos midiNanos = (refNanos == 0) ? MasterClock::getClockNanos() : refNanos;
+quint64 AudioStream::estimateMIDITimestamp(const MasterClockNanos midiNanos) {
 	TimeInfo timeInfo;
 	takeSnapshot(timeInfo, timeInfos, timeInfoChangeCount);
 	quint64 renderedFramesCount;
@@ -81,6 +80,13 @@ quint64 AudioStream::estimateMIDITimestamp(const MasterClockNanos refNanos) {
 // Only called from the rendering thread.
 quint64 AudioStream::computeMIDITimestamp(uint relativeFrameTime) const {
 	return getRenderedFramesCount() + relativeFrameTime;
+}
+
+// Only called from the rendering thread.
+void AudioStream::renderAndUpdateState(MT32Emu::Bit16s *buffer, const quint32 frameCount, const MasterClockNanos measuredNanos, const quint32 framesInAudioBuffer) {
+	updateTimeInfo(measuredNanos, framesInAudioBuffer);
+	synthRoute.render(buffer, frameCount);
+	framesRendered(frameCount);
 }
 
 // Only called from the rendering thread.

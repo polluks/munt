@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2020 Jerome Fisher, Sergey V. Mikayev
+/* Copyright (C) 2011-2021 Jerome Fisher, Sergey V. Mikayev
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -51,10 +51,8 @@ public:
 		} else {
 			framesInAudioBuffer = 0;
 		}
-		stream.updateTimeInfo(nanosNow, framesInAudioBuffer);
 		uint framesToRender = uint(len >> 2);
-		stream.synthRoute.render((Bit16s *)data, framesToRender);
-		stream.framesRendered(framesToRender);
+		stream.renderAndUpdateState((Bit16s *)data, framesToRender, nanosNow, framesInAudioBuffer);
 		return len;
 	}
 
